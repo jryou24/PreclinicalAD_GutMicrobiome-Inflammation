@@ -1,0 +1,2487 @@
+---
+title: "PreclinAD_Microbiome_Analyses"
+output: html_document
+date: "2025-08-15"
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)          #3.5.0
+library(ggExtra)          #0.10.1
+library(ggridges)
+library(ggrepel)
+library(dplyr)            #1.1.2
+library(phyloseq)         #1.46.0
+library(vegan)
+library(Maaslin2)         #1.12.0
+library(ape)              #5.7.1
+library(readxl)           #1.4.3     
+library(microViz)         #0.12.0
+library(ggside)           #0.3.1
+library(patchwork)        #1.2
+library(ComplexHeatmap)   #2.14.0
+library(tidyr)            #1.3.1
+library(readr)            #2.1.5
+library(reshape2)         #1.4.4
+library(rstatix)          #0.7.2
+library(ggpubr)           #0.6.0
+library(NatParksPalettes) #0.2.0
+library(cowplot)          #1.1.2
+library(stringr)          #1.5.1
+library(Boruta)           #8.0.0 
+library(caret)            #6.0-94
+library(VIM)              #6.2.2 
+library(corpcor)
+library(corrplot)
+library(Hmisc)
+library(ANCOMBC)          #2_4.0   
+library(MTXmodel)         #1.2.4
+library(forcats)          #1.0.0
+library(tidyverse)        #2.0.0  
+library(scales)           #1.3.0
+library(microbiome)
+library(lme4)
+library(lmerTest)
+library(lmtest)
+library(broom)
+library(MuMIn)
+library(car)
+library(emmeans)
+library(igraph)
+library(FSA)
+library(rcompanion)
+## Data Processing Functions 
+source("Functions/phyloseq_object.R")
+source("Functions/tree_object.R")
+source("Functions/data_parsing.R")
+source("Functions/Correlation_analyses.R")
+source("Functions/GLM_functions.R")
+#source("main/HighstatLib.r")
+
+##Analysis and Plotting Functions 
+source("Functions/oordinate_wrapper.R")
+source("Functions/ordinate_metaphlan.R")
+source("Functions/maaslin_MTX_DE.R")
+source("Functions/plot_maaslin_MTX_DE.R")
+source("Functions/compare_longitudinal_beta_diversity.R")
+source("Functions/Statistical_tests.R")
+source("Functions/secom.R")
+source("Functions/SECOM_functions.R")
+source("Functions/rf_boruta.R")
+cur.date <- format(Sys.Date(), "%y%m%d")
+output_path <- (paste0("outputs/", cur.date, "/", cur.date))
+output_path2 <- (paste0("outputs/", cur.date, "/"))
+
+
+cat_var <- c('Sample_ID','ID','Time_point','Sex','Race',"CDR",'AD_Status', 'Amyloid_positivity', 'Tau_positivity','Tracer_used_for_classification','Tau_marker','amyloid_tau_status','Tracer.mrfree','Tracer.fsuvr','Tracer.av45','Tracer.tau','apoe_genotype','apoe4_carriage','Diabetes_binary',	'Hypertension_binary','Diabetes',	'Hypertension')
+
+
+num_var <- c("Years_Education","Age","Days_since_CDR",'Days_since_biomarker_assessment',"combined.centiloid","MRFreePET_Centiloid","Days_sinceMrFreePETpib","pib_fsuvr_rsf_tot_cortmean","Centiloid_PiB_fSUVR_rsf_TOT_CORT","Days_sincePETpib","av45_fsuvr_rsf_tot_cortmean","Centiloid_AV45_fSUVR_rsf_TOT_COR","Days_sincePETav45","LUMIPULSE_CSF_AB42","LUMIPULSE_CSF_AB40","LUMIPULSE_CSF_tTau","LUMIPULSE_CSF_pTau","CSF_ab42_ab40_ratio","Days_sinceCSF","Tauopathy","Days_sincePETtau","mr_vol_tot_wmhypointensities","LOAD_CorticalSignature_Thickness","mr_vol_r_hippocampus","mr_vol_l_hippocampus","mr_vol_tot_intracranial","hippocampus_vol_div_icv",	"Days_sinceMRI","NGAL_ug_ml","Calp_ug_ml",	"log2_NGAL","log2_Calp","WEIGHT","HEIGHT","BMI","Calories_kcal",	'Calories_from_fat_kcal',	'Calories_from_SatFat_kcal',	'Protein_g',	'Carbohydrates_g',	'Total_dietary_fiber_g',	'Total_soluble_fiber_g',	'Dietary_fiber_US_2016_g',	'Soluble_fiber_US_2016',	'Total_sugars_g',	'Added_sugar_g','Monosaccharides_g')
+
+
+# Custom colors for plotting
+custom_colors_hp <- c("Healthy" = "#49b9a5", "Preclinical" = "#eebe61")
+custom_colors_AD <- c("Healthy" = "#49b9a5", "Preclinical" = "#eebe61", "Symptomatic" = "#a98ec2")
+custom_colors_hp_long <- c("Healthy" = "#49b9a5", "Healthy_follow-up" = "#a7d9c1", "Preclinical" = "#eebe61",
+                           "Preclinical_follow-up" = "#e9d8b5")
+custom_colors_at_status <- c("Healthy A-/T-"="#49b9a5", "Preclinical A+/T-" = "#eebe61", "Preclinical A+/T+" = "#b08d25", "SNAP" =  "#237a80")
+
+```
+
+Load Data
+```{r}
+
+meta_data_path <- "~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/SupplementaryTable1.xlsx"
+metaphlan_path <- "~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/MTG_metaphlan3_merged.txt"
+meta_new <- read_excel(meta_data_path)
+## Read in Metaphlan3 tree which is necessary to compute UniFrac distances later ###
+m3.tree.Jan19 <- ape::read.tree("~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/mpa_v30_CHOCOPhlAn_201901_species_tree.nwk.txt")
+m3.tree.Jan19$tip.label <- gsub('GCA_[0-9]+\\|', '', m3.tree.Jan19$tip.label)
+
+## Create phyloseq object
+ps_MTG <- make_phyloseq_object(metaphlan_path, 
+                                 path_to_metadata= meta_data_path, 
+                                 tree_object = m3.tree.Jan19, 
+                                 cat_vars=cat_var,
+                                 num_vars=num_var,
+                                 abund_threshold = 0.1, 
+                                 compute_mean=FALSE) 
+```
+
+Create Table 1 (need revision)
+```{r}
+library(kableExtra)
+library("anytime") 
+library(tibble) # for rownames_to_column() function
+library(stringr) # for str_squish()
+library(flextable)
+library(officer)
+library(forcats)
+library(tableone)
+library(webshot2)
+
+source("~/Documents/GitHub/AD_longitudinal/datasets/Metadata/customtab.R")
+
+meta_closest <- ps_mtg_single_tp.hp_meta
+# Set categorical variables as factors !!!!!!!!!!! Modify these as needed later !!!!!!!!!!!!!!!!!!!!
+categorical_vars <- c('ID', 'Sample_ID','AD_Status', 'sex', 'Amyloid_positivity', 'race','Race_caucasian','cdr','apoe','apoe.dose','apoe4.carriage','apoe_genotype','apoe_genotype2','DEP2YRS','CBSTROKE','Diabetes_binary','Hypertension_binary','Hypercholesterolemia','Heart_attack_incidence','THYROID','Smoked_within_last_30_days','Alcohol_abuse','INDEPEND','RESIDENC','cancer','APP','Tracer_used_for_classification','Tau_positivity')
+
+meta_closest[,categorical_vars] <- lapply(meta_closest[,categorical_vars], factor)
+
+numerical_vars <- c("age","EDUC","BMI","combined.centiloid",'Days_sinceMrFreePETpib','Days_sincePETpib','Days_sincePETav45','Days_sinceCSF','Days_since_plasma','Days_sincePETtau','Days_since_biomarker_assessment','Calories_kcal',	'Calories_from_fat_kcal',	'Calories_from_SatFat_kcal','Protein_g','Carbohydrates_g','Total_dietary_fiber_g','Total_soluble_fiber_g','Total_sugars_g','Added_sugar_g'	,'Monosaccharides_g',"MTG_seq_depth_final_M","MTX_SeqDepth_M")
+
+meta_closest[,numerical_vars] <- lapply(meta_closest[,numerical_vars], as.numeric)
+
+# Generate metadata comparison table 
+comp_vars <- c('sex','age','EDUC','race','BMI','apoe4.carriage','Diabetes','Hypertension','Calories_kcal','Calories_from_fat_kcal', 'Calories_from_SatFat_kcal','Protein_g','Carbohydrates_g','Total_dietary_fiber_g','Total_soluble_fiber_g','Total_sugars_g','Added_sugar_g','Monosaccharides_g',"combined.centiloid",'Tau_positivity','Days_since_biomarker_assessment')
+
+
+tab_hp_closest <- CreateTableOne(vars=comp_vars,
+                           strata='AD_Status', 
+                           data=meta_closest)
+tab_plot_hp_closest <- print(tab_hp_closest, 
+                        showAllLevels = TRUE,
+                        quote = F,
+                        noSpaces = T,
+                        test = T,
+                        contDigits = 1,
+                        printToggle = F,
+                        dropEqual = T,
+                        explain = F)
+
+# Convert to dataframe
+tab_hp_closest_df <- as.data.frame(tab_plot_hp_closest) %>% rownames_to_column(var = "Variable")
+
+# Set Table header
+header <- str_squish(str_remove("Table 1. Participant demographics at the time the stool sample closest to AD biomarker assessment date was collected, stratified by AD status", "\n"))
+# Set Table footer
+footer <- str_squish(str_remove("Numbers are either No. or mean values", "\n"))
+# Set custom_tab() defaults
+customtab_defaults()
+# Create the flextable object
+flextable_processed_samples <- custom_tab(tab_hp_closest_df, header, footer)
+
+# Save as word .docx
+save_as_docx(flextable_processed_samples, path = "~/Library/CloudStorage/Box-Box/DantasLab/AD_microbiome/Paper2/Final_Figures/No_symptomatics/Table 1/Table1.docx",
+pr_section = prop_section(page_size = page_size(orient = "landscape"), type = "continuous"))
+```
+
+
+Figure 1
+```{r}
+# PCoA and permanova using single timepoint samples from healthy and preclinical samples closest to biomarker assessment date 
+mtg_single_tp_hp_meta <- data.frame(phyloseq::sample_data(ps_mtg_single_tp.hp))
+ps.ordination <- phyloseq::ordinate(ps_mtg_single_tp.hp, method='PCoA', distance='unifrac')
+
+coordinates <- data.frame(ps.ordination$vectors)
+
+df <- data.frame(Coord1 = coordinates$Axis.1,
+                 Coord2 = coordinates$Axis.2,
+                 Age = mtg_single_tp_hp_meta[, "age"],
+                 Sex = mtg_single_tp_hp_meta[, "sex"],
+                 Race = mtg_single_tp_hp_meta[, "race"],
+                 BMI = mtg_single_tp_hp_meta[, "BMI"],
+                 Copies_of_APOE4_allele = mtg_single_tp_hp_meta[, "apoe4.carriage"],
+                 Diabetes = mtg_single_tp_hp_meta[, "Diabetes"],
+                 Hypertension = mtg_single_tp_hp_meta[, "Hypertension"],
+                 Days_since_biomarker_assessment = mtg_single_tp_hp_meta[, "Days_since_biomarker_assessment"],
+                 Group = mtg_single_tp_hp_meta[, "AD_Status"])
+df <- df %>%
+  filter(!is.na(Copies_of_APOE4_allele))
+
+axis1.model <- lm(Coord1 ~ Age + Sex + BMI + Copies_of_APOE4_allele + Diabetes + Hypertension + Group, data=df)
+axis1_summary <- tidy(axis1.model)
+write.csv(axis1_summary, "251124_PCoA1_hp_LM_results.csv", row.names = F)
+
+# Type II ANOVA to assess the effect of AD_Status on PCoA1 scores while adjusting for covariates
+## The effect of AD_Status was marginally significant (F=4.11, p=0.044), indicating that amyloid positivity explained a significant portion of the variation in taxonomic composition along PCoA axis 1. 
+axis1_result <- car::Anova(axis1.model, type = 3) 
+write.csv(axis1_result, "260219_PCoA1_hp_typeIII_ANOVA_results.csv", row.names = T)
+
+axis2.model <- lm(Coord2 ~ Age + Sex + BMI + Copies_of_APOE4_allele + Diabetes + Hypertension + Group, data=df)
+summary(axis2.model)
+axis2_summary <- tidy(axis2.model)
+write.csv(axis2_summary, "251124_PCoA2_hp_LM_results.csv", row.names = T)
+
+## The effect of AD_Status was trending towards significance (F=3.27, p=0.072), indicating that amyloid positivity explained a significant portion of the variation in taxonomic composition along PCoA axis 2.
+axis2_result <- car::Anova(axis2.model, type = 3)
+write.csv(axis2_result, "250219_PCoA2_hp_typeIII_ANOVA_results.csv", row.names = T)
+
+
+ordination.plot <- phyloseq::plot_ordination(ps_mtg_single_tp.hp, ps.ordination,
+                                             type="samples", color="AD_Status") +
+  geom_point(size=3, shape=19) +
+  stat_ellipse() +
+  scale_color_manual(values=custom_colors_hp, name = "AD Status") + 
+  labs(x = "PCoA1 (21.8%)", y = "PCoA2 (10%)") +
+  theme_classic() +
+  theme(
+    axis.text.y = element_text(size=14),
+    axis.text.x = element_text(size=14),
+    axis.title.x = element_text(size=14),
+    axis.title.y = element_text(size=14),
+    legend.title = element_text(size=14),
+    legend.text = element_text(size=14),
+    legend.position = "left",
+    # legend.box.background = element_rect(color = "black", size = 0.8),
+    # legend.box.margin = margin(t = 5, r = 5, b = 5, l = 5),
+    plot.title = element_text(size=15),
+    panel.border = element_rect(fill = NA, colour = "black", size = 3)
+  )
+# Add ggmarginal 
+ordination.plot <- ggMarginal(ordination.plot, type = 'boxplot', groupFill = TRUE, size = 10)
+ggsave("260213_Fig1A.pdf", plot = ordination.plot, bg = "transparent", width = 9, height = 6)
+
+# Add the Unifrac PCoA 1 and 2 axes to the phyloseq object metadata
+sample_data(ps_mtg_single_tp.hp)$Tax.PCoA1 <- ps.ordination$vectors[,1]
+sample_data(ps_mtg_single_tp.hp)$Tax.PCoA2 <- ps.ordination$vectors[,2]
+
+# PERMANOVA with all significantly different variables based on Table 1
+## N = 197 (drops 1 sample without APOE data)
+perm_mtg_single_tp_hp <- permanova_wrapper(ps_mtg_single_tp.hp, values=c("Healthy","Preclinical"), var = "AD_Status", adonis_values = c("age","sex","BMI","apoe4.carriage","Diabetes","Hypertension","AD_Status"), ss_method = "margin") #p-value = 0.038
+write.csv(perm_mtg_single_tp_hp@permanova, "260303_Fig1B.csv")
+
+perm_df <- as.data.frame(perm_mtg_single_tp_hp@permanova)
+perm_df$Term <- rownames(perm_df)
+rownames(perm_df) <- NULL
+perm_df2 <- perm_df[, c("Term", "R2", "Pr(>F)")]
+colnames(perm_df2) <- c("Variable", "Metagenomic variance explained", "P value")
+
+perm_df2 <- perm_df2 %>%
+  filter(!Variable %in% c("Residual", "Total"))
+
+ft <- flextable(perm_df2) %>%
+  autofit()
+doc <- read_docx() %>%
+  body_add_flextable(ft)
+print(doc, target = "Fig1B.docx")
+
+######### Run MaAslin2 and create Fig. 1C ############
+ps_mtg_single_tp.hp_filt <- ps_mtg_single_tp.hp %>% subset_samples(!is.na(apoe4_carriage))
+
+maaslin_wrapper(ps_mtg_single_tp.hp, random_effects_vector=c(), reference_vector = c("AD_Status,Healthy", "apoe4_carriage,0", "sex,M", "Diabetes", "Hypertension"), fixed_effects_vector = c("age","sex","BMI","apoe4_carriage","Diabetes","Hypertension","AD_Status"), anal_method = "NEGBIN", core = 8)
+
+num_samples <- length(ps_mtg_single_tp.hp@sam_data$Sample_ID)
+sample_cutoff <- num_samples*.10
+maaslin_output <- "~/Library/CloudStorage/Box-Box/DantasLab/AD_microbiome/Paper2/Final_Figures/No_symptomatics/250815_maaslin/ps_mtg_single_tp.hp/significant_results.tsv"
+
+
+maaslin_df <- read_tsv(maaslin_output) %>% filter(metadata=="AD_Status") %>% mutate(abs_coef=abs(coef)) %>% mutate(qval = p.adjust(pval, method = 'BH')) %>% filter(N.not.0>sample_cutoff) %>% mutate(feature=gsub(".*s__", "", feature)) %>% mutate(value=as.factor(value)) 
+
+median <- median(maaslin_df$abs_coef)
+maaslin_plot_subset <- subset(maaslin_df, N.not.0 > sample_cutoff & abs(coef) > median)
+maaslin_plot_subset <- maaslin_plot_subset %>% arrange(desc(coef))
+#obtain min and max coefficient values (needed for plotting later)
+min <- min(maaslin_plot_subset$coef)
+max <- max(maaslin_plot_subset$coef)
+
+### Generate coefficient plot ####
+# Calculate 95% CI for coefficients
+maaslin_plot_subset <- maaslin_plot_subset %>% mutate(species = fct_reorder(feature, coef))
+
+maaslin_plot_subset$coefmax <- maaslin_plot_subset$coef + maaslin_plot_subset$stderr
+maaslin_plot_subset$coefmin <- maaslin_plot_subset$coef - maaslin_plot_subset$stderr
+
+maaslin_plot_subset$CI95upper <- maaslin_plot_subset$coef + 1.96*maaslin_plot_subset$stderr
+maaslin_plot_subset$CI95lower <- maaslin_plot_subset$coef - 1.96*maaslin_plot_subset$stderr
+write.csv(maaslin_plot_subset, "260213_Fig1C_coeff_values.csv", row.names = F)
+
+# Plot coefficients
+x_min_lim <- (floor(min / 5) * 6) 
+x_max_lim <- (ceiling(max / 5) * 6) 
+colors_list <- c("#eebe61","#49b9a5")
+
+coeff_p <- ggplot(maaslin_plot_subset, aes(x=coef, y=species,color=as.factor(coef<0)))+
+  geom_point(size = 3)+
+  geom_errorbarh(aes(xmax = CI95upper, xmin = CI95lower))+
+  geom_vline(xintercept = 0, linetype='dotted', color='grey', size=1.5)+
+  scale_color_manual(values=colors_list)+
+  theme_linedraw()+
+  theme(axis.text.y = element_text(size=18),
+        axis.text.x = element_text(size=18),
+        axis.title.x = element_text(size=17),
+        axis.title.y = element_blank(),
+        legend.text = element_text(size = 16),
+        legend.position = "bottom",
+        plot.title = element_text(size=15),
+        panel.border = element_rect(fill=NA, colour="black", size=1))+
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  xlab('Coefficient')
+ggsave("260213_Fig1C_coeff.pdf", plot = coeff_p, bg = "transparent", width = 11, height = 12)
+
+#### Generate prevalence plot ###
+### Access species abundance data 
+abund <- psmelt(ps_mtg_single_tp.hp)
+
+abund <- abund %>% mutate(OTU=gsub(".*s__", "", OTU))
+diff_feat_abund <- subset(abund, OTU %in% maaslin_plot_subset$feature)
+
+# Re-order feature abs abundances according to coefficient value
+# This order is preserved in filename, which was previously ordered: 
+order <- data.frame(OTU = unique(maaslin_plot_subset$feature))
+# sort = F makes sure that the order is based on order_index df which is ordered by coefficient value
+abund.df <- merge(order, diff_feat_abund, by="OTU", sort = F)
+abund.df$OTU <- as.factor(abund.df$OTU)
+abund.df <- abund.df %>% mutate(OTU = fct_relevel(OTU, maaslin_plot_subset$feature))
+
+# For each significant feature in each sample, set AbunNotZero == 1 if its 
+# abundance is greater than 0. 
+abund.df$AbunNotZero <- 1*(abund.df$Abundance > 0)
+
+# Summarize pathway prevalence by variable of interest
+abund.df.n0 <- abund.df %>% 
+  group_by(OTU, AD_Status) %>%
+  summarise(N = n(), SumNotZero = sum(AbunNotZero)) %>%
+  mutate(PercentNotZero = 100*(SumNotZero / N)) %>%
+  ungroup()
+write.csv(abund.df.n0, "260213_maaslin2_species_prevalence.csv", 
+          row.names = F)
+
+prev_p <- ggplot(abund.df.n0, aes(x = AD_Status, y=OTU, fill=PercentNotZero))+
+  geom_tile()+
+  scale_fill_distiller(palette ='RdBu', type='seq', breaks = c(0,50,100), 'Prevalence (%)')+
+  theme_classic()+
+  theme(axis.text.y = element_blank(),
+        axis.text.x = element_text(size=18, angle=45, hjust=1),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        plot.title = element_text(size=17),
+        legend.text = element_text(size = 18),
+        panel.border = element_rect(fill=NA, colour="black", size=1))+
+  scale_y_discrete(limits=rev)
+ggsave("260213_Fig1C_prev.pdf", plot = prev_p, bg = "transparent", width = 11, height = 12)
+
+combined_maaslin_p <- coeff_p | prev_p 
+ggsave("260213_Fig1B_MaAslin2_taxa_plot.pdf", plot = combined_maaslin_p, bg = "transparent", width = 16, height = 10)
+
+
+###### Comparing output with Ferreiro et al. 2023 ########
+af_results <- read_excel("~/Library/CloudStorage/Box-Box/DantasLab/AD_microbiome/Aura/scitranslmed.abo2984_data_files_s1_to_s4/Aura_MaAslin2_species_Amyloid_positive_results.xlsx")
+
+af_results2 <- af_results %>% select(feature, coef) %>% dplyr::rename(af_coef = coef) %>% mutate(feature=gsub(".*s__", "", feature))
+
+common_results <- merge(maaslin_df, af_results2, by = "feature", all.x = T) %>% arrange(desc(coef)) %>%
+  mutate(consistent = case_when(is.na(coef) | is.na(af_coef) ~ NA_character_,
+                                coef > 0 & af_coef > 0 ~ "true_pos",
+                                coef < 0 & af_coef < 0 ~ "true_neg",
+                                TRUE ~ "false"))
+common_results %>% count(consistent) %>% mutate(proportion = n / nrow(common_results))
+
+maaslin_df <- maaslin_df %>% arrange(desc(coef))
+
+####### Prepare supplementary table 4 #######
+maaslin_df_all <- read_tsv(maaslin_output) %>% mutate(abs_coef=abs(coef)) %>% mutate(qval = p.adjust(pval, method = 'BH')) %>% filter(N.not.0>sample_cutoff) %>% mutate(feature=gsub(".*s__", "", feature)) %>% mutate(value=as.factor(value)) %>% arrange(metadata, desc(coef))
+
+## Add a column that indicates whether the taxa was identified in Ferreiro et al. 2023
+maaslin_df_all <- maaslin_df_all %>% mutate(Identified_in_Ferreiro_et_al = ifelse(metadata == "AD_Status", ifelse(is.na(common_results$consistent), FALSE, TRUE), NA_character_))
+write.csv(maaslin_df_all, "260224_MaAslin2_taxa_Supplementary_Table4.csv", row.names = F)
+```
+
+Extended Figure 1
+```{r}
+#### Compare alpha diversity between groups ###
+alpha_div_mtg_single_tp <- alpha_div_wrapper_adjust_var(ps_mtg_single_tp.hp, 
+                                                        values=c("Healthy", "Preclinical"),
+                                                        color_vector = custom_colors_hp,
+                                                        save_adiv_plot = TRUE)
+sample_data(ps_m3_mtg_single_tp.filt)$Tax_Richness <- alpha_div_mtg_single_tp$Richness
+sample_data(ps_m3_mtg_single_tp.filt)$Tax_Shannon <- alpha_div_mtg_single_tp$Shannon
+sample_data(ps_m3_mtg_single_tp.filt)$Tax_Simpson <- alpha_div_mtg_single_tp$Simpson
+```
+
+
+Figure 2: Network analysis
+```{r}
+# Prepare phyloseq objects for SECOM
+ps_mtg_last_h <- ps_mtg_last_tp_hp %>% subset_samples(AD_Status == "Healthy") %>% subset_samples(ID != "68675")
+ps_mtg_last_p <- ps_mtg_last_tp_hp %>% subset_samples(AD_Status == "Preclinical")
+ps_mtg_closest_h <- ps_mtg_single_tp.hp %>% subset_samples(AD_Status == "Healthy")
+ps_mtg_closest_p <- ps_mtg_single_tp.hp %>% subset_samples(AD_Status == "Preclinical")
+
+ps_mtg_last_p_meta <- data.frame(sample_data(ps_mtg_last_p))
+ps_mtg_last_h_meta <- data.frame(sample_data(ps_mtg_last_h))
+ps_mtg_closest_h_meta <- data.frame(sample_data(ps_mtg_closest_h))
+ps_mtg_closest_p_meta <- data.frame(sample_data(ps_mtg_closest_p))
+
+
+tso_mtg_h_last = mia::makeTreeSummarizedExperimentFromPhyloseq(ps_mtg_last_h)  # 64 samples
+tso_mtg_p_last = mia::makeTreeSummarizedExperimentFromPhyloseq(ps_mtg_last_p) # 25 samples
+tso_mtg_h_closest = mia::makeTreeSummarizedExperimentFromPhyloseq(ps_mtg_closest_h) # 137 samples
+tso_mtg_p_closest = mia::makeTreeSummarizedExperimentFromPhyloseq(ps_mtg_closest_p) # 61 samples
+
+# Run SECOM
+set.seed(123)
+secom_h_closest = secom_linear(data = list(tso_mtg_h_closest), assay_name = "counts",
+                          tax_level = NULL, pseudo = 0, 
+                          prv_cut = 0, lib_cut = 0, corr_cut = 0.6, 
+                          wins_quant = c(0.05, 0.95), method = "pearson", 
+                          soft = FALSE, thresh_len = 20, n_cv = 10, 
+                          thresh_hard = 0.3, max_p = 0.05, n_cl = 2)
+secom_p_closest = secom_linear(data = list(tso_mtg_p_closest), assay_name = "counts",
+                          tax_level = NULL, pseudo = 0, 
+                          prv_cut = 0, lib_cut = 0, corr_cut = 0.6, 
+                          wins_quant = c(0.05, 0.95), method = "pearson", 
+                          soft = FALSE, thresh_len = 20, n_cv = 10, 
+                          thresh_hard = 0.3, max_p = 0.05, n_cl = 2)
+
+secom_h_last = secom_linear(data = list(tso_mtg_h_last), assay_name = "counts",
+                          tax_level = NULL, pseudo = 0, 
+                          prv_cut = 0, lib_cut = 0, corr_cut = 0.6, 
+                          wins_quant = c(0.05, 0.95), method = "pearson", 
+                          soft = FALSE, thresh_len = 20, n_cv = 10, 
+                          thresh_hard = 0.3, max_p = 0.05, n_cl = 2)
+
+secom_p_last = secom_linear(data = list(tso_mtg_p_last), assay_name = "counts",
+                          tax_level = NULL, pseudo = 0, 
+                          prv_cut = 0, lib_cut = 0, corr_cut = 0.6, 
+                          wins_quant = c(0.05, 0.95), method = "pearson", 
+                          soft = FALSE, thresh_len = 20, n_cv = 10, 
+                          thresh_hard = 0.3, max_p = 0.05, n_cl = 2)
+
+set.seed(123)
+P_closest_res_linear_network <- calc_secom_network_properties(secom_p_closest, overlap_threshold = 10, cor_threshold = 0.6) 
+H_closest_res_linear_network <- calc_secom_network_properties(secom_h_closest, overlap_threshold = 10, cor_threshold = 0.6)
+
+P_last_res_linear_network <- calc_secom_network_properties(secom_p_last, overlap_threshold = 10, cor_threshold = 0.5)
+H_last_res_linear_network <- calc_secom_network_properties(secom_h_last, overlap_threshold = 10, cor_threshold = 0.5) 
+
+h_closest_node <- H_closest_res_linear_network$nodes
+h_closest_node <- h_closest_node %>% 
+  mutate(id=gsub(".*s__", "", id),
+         Label=gsub(".*s__", "", Label))
+p_closest_node <- P_closest_res_linear_network$nodes
+p_closest_node <- p_closest_node %>% 
+  mutate(id=gsub(".*s__", "", id),
+         Label=gsub(".*s__", "", Label))
+
+h_last_node <- H_last_res_linear_network$nodes
+h_last_node <- h_last_node %>% 
+  mutate(id=gsub(".*s__", "", id),
+         Label=gsub(".*s__", "", Label))
+p_last_node <- P_last_res_linear_network$nodes
+p_last_node <- p_last_node %>% 
+  mutate(id=gsub(".*s__", "", id),
+         Label=gsub(".*s__", "", Label))
+
+h_closest_edges <- H_closest_res_linear_network$edges
+h_closest_edges <- h_closest_edges %>% 
+  mutate(Source=gsub(".*s__", "", Source),
+         Target=gsub(".*s__", "", Target))
+p_closest_edges <- P_closest_res_linear_network$edges
+p_closest_edges <- p_closest_edges %>% 
+  mutate(Source=gsub(".*s__", "", Source),
+         Target=gsub(".*s__", "", Target))
+
+h_last_edges <- H_last_res_linear_network$edges
+h_last_edges <- h_last_edges %>% 
+  mutate(Source=gsub(".*s__", "", Source),
+         Target=gsub(".*s__", "", Target))
+p_last_edges <- P_last_res_linear_network$edges
+p_last_edges <- p_last_edges %>% 
+  mutate(Source=gsub(".*s__", "", Source),
+         Target=gsub(".*s__", "", Target))
+
+####### Compare hubbiness metrics between networks: Cross-sectional (Fig D)
+hub_metrics_h_closest <- h_closest_node %>%
+  mutate(Group = "Healthy")
+hub_metrics_p_closest <- p_closest_node %>%
+  mutate(Group = "Preclinical")
+hub_metrics_closest <- rbind(hub_metrics_h_closest, hub_metrics_p_closest)
+hub_metrics_closest$Group <- as.factor(hub_metrics_closest$Group)
+hub_metrics_closest$Group <- factor(hub_metrics_closest$Group, levels=c("Healthy","Preclinical"))
+
+bp_closest_degree <- ggplot(hub_metrics_closest, aes(x = Group, y = degree, fill = Group)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp) +  # Change the palette to suit your preferences
+  scale_color_manual(values = custom_colors_hp) +
+  labs(x = "AD Status",
+       y = "Degree") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy", "Preclinical")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.1, # Helps prevent label overlap
+                     size = 6, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("Fig2C_degree.pdf", plot = bp_closest_degree, bg = "transparent", width = 10, height = 8)
+
+bp_closest_norm_degree <- ggplot(hub_metrics_closest, aes(x = Group, y = normalized_degree, fill = Group)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp) +
+  scale_color_manual(values = custom_colors_hp) +
+  labs(x = "AD Status",
+       y = "Normalized Degree") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 50, hjust = 1, size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy", "Preclinical")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.1, # Helps prevent label overlap
+                     size = 5, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("normalized_degree_hp.pdf", plot = bp_closest_norm_degree, bg = "transparent", width = 10, height = 8) ## Stats were replaced with dunn test results
+
+
+bp_closest_betweenness <- ggplot(hub_metrics_closest, aes(x = Group, y = betweenness, fill = Group)) +
+  geom_boxplot(outlier.shape = NA) +  
+  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp) +  # Change the palette to suit your preferences
+  scale_color_manual(values = custom_colors_hp) +
+  labs(title = "Betweenness centrality of species-species networks by AD Status at closest time point to PET/CSF assessments",
+       subtitle = "Wilcoxon rank sum test (BH corrected)",
+       x = "AD Status",
+       y = "Betweenness Centrality",
+       fill = "AD Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 50, hjust = 1, size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy", "Preclinical")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.1, # Helps prevent label overlap
+                     size = 5, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("Extended_Fig_2A.pdf", plot = bp_closest_betweenness, bg = "transparent", width = 10, height = 8)
+
+bp_closest_closeness <- ggplot(hub_metrics_closest, aes(x = Group, y = closeness, fill = Group)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp) +  # Change the palette to suit your preferences
+  scale_color_manual(values = custom_colors_hp) +
+  labs(x = "AD Status",
+       y = "Closeness Centrality",
+       fill = "AD Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")
+        ) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy", "Preclinical")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.1, # Helps prevent label overlap
+                     size = 6, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("Fig2C_closeness.pdf", plot = bp_closest_closeness, bg = "transparent", width = 10, height = 8)
+
+bp_closest_coreness <- ggplot(hub_metrics_closest, aes(x = Group, y = Coreness, fill = Group)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp) +  
+  scale_color_manual(values = custom_colors_hp) +
+  labs(x = "AD Status",
+       y = "Coreness",
+       fill = "AD Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")
+        ) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy", "Preclinical")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.1, # Helps prevent label overlap
+                     size = 6, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("Figure2C_coreness.pdf", plot = bp_closest_coreness, bg = "transparent", width = 10, height = 8)
+
+bp_closest_efficiency <- ggplot(hub_metrics_closest, aes(x = Group, y = local_efficiency, fill = Group)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp) +  # Change the palette to suit your preferences
+  scale_color_manual(values = custom_colors_hp) +
+  labs(x = "AD Status",
+       y = "Local Efficiency",
+       fill = "AD Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")
+        ) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy", "Preclinical")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.1, # Helps prevent label overlap
+                     size = 6, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("Figure2C_local_effiency.pdf", plot = bp_closest_efficiency, bg = "transparent", width = 10, height = 8)
+
+combined_plot <- bp_closest_degree / bp_closest_closeness / bp_closest_efficiency / bp_closest_coreness
+ggsave("Fig_2C.pdf", plot = combined_plot, bg = "transparent", width = 10, height = 20)
+
+combined_plot_hor <- bp_closest_degree | bp_closest_closeness | bp_closest_efficiency | bp_closest_coreness
+ggsave("Fig_2C_hor.pdf", plot = combined_plot_hor, bg = "transparent", width = 20, height = 8)
+
+### Identifying keystone taxa (taxa with high degree and betweenness) for labeling ###
+summary(hub_metrics_closest$degree)
+summary(hub_metrics_closest$betweenness)
+
+h_closest_keystones <- hub_metrics_h_closest %>% filter(degree > quantile(degree, 0.9) & betweenness > quantile(betweenness, 0.9))
+p_closest_keystones <- hub_metrics_p_closest %>% filter(degree > quantile(degree, 0.9) & betweenness > quantile(betweenness, 0.9))
+closest_keystones <- rbind(h_closest_keystones, p_closest_keystones)
+write.csv(closest_keystones, "250902_closest_hp_keystone_taxa.csv", row.names = F)
+
+cutoffs <- hub_metrics_closest %>%
+  group_by(Group) %>% summarise(degree_cutoff = quantile(degree, 0.9, na.rm = TRUE),
+                                betweenness_cutoff = quantile(betweenness, 0.9, na.rm = TRUE))
+hub_metrics_closest_cutoffs <- hub_metrics_closest %>% left_join(cutoffs, by = "Group")
+
+degree_bw_scatter <- ggplot(hub_metrics_closest, aes(x = degree, y = betweenness, label = id)) +
+  geom_point(aes(color = Group), size = 3, alpha = 0.7) +
+  geom_text_repel(data = closest_keystones, aes(label = id), size = 4, box.padding = 0.4, point.padding = 0.3, max.overlaps = 20,
+                  segment.color = "grey50") +
+  coord_cartesian(xlim = c(min(hub_metrics_closest$degree) - 1, max(hub_metrics_closest$degree) + 1),
+                  ylim = c(min(hub_metrics_closest$betweenness) - 1, max(hub_metrics_closest$betweenness) + 1)) +
+  scale_color_manual(values = custom_colors_hp) +
+  theme_minimal() +
+  labs(
+    title = "Taxa with degree and betweenness in the top 10% within each individual dataset",
+    x = "Degree",
+    y = "Betweenness",
+    color = "AD Status"
+  ) +
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 14))
+ggsave("250904_keystone_taxa_closest_hp.pdf", plot = degree_bw_scatter, bg = "transparent", width = 10, height = 8)
+
+degree_bw_scatter_faceted <- ggplot(hub_metrics_closest_cutoffs, aes(x = degree, y = betweenness)) + 
+  geom_point(aes(color = Group), size = 3, alpha = 0.7) + 
+  geom_text_repel(data = closest_keystones, aes(label = id), size = 3, box.padding = 0.4, point.padding = 0.3, max.overlaps = 20,
+                  segment.color = "grey50") + 
+  geom_vline(data = cutoffs, aes(xintercept = degree_cutoff),
+             linetype = "dashed", color = "grey50", inherit.aes = FALSE) +
+  geom_hline(data = cutoffs, aes(yintercept = betweenness_cutoff),
+             linetype = "dashed", color = "grey50", inherit.aes = FALSE) +
+  scale_color_manual(values = custom_colors_hp) +
+  facet_wrap(~ Group) +
+  theme_minimal() +
+  theme(panel.clip = "off", strip.text = element_blank()) +
+   theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 14)) +
+    labs(
+    title = "Taxa with degree and betweenness in the top 10% within each individual dataset",
+    x = "Degree",
+    y = "Betweenness",
+    color = "AD Status") 
+ggsave("250904_keystone_taxa_closest_hp_faceted.pdf", plot = degree_bw_scatter_faceted, bg = "transparent", width = 10, height = 8)
+
+
+```
+
+
+Figure 2: Subsampling analysis (Cross-sectional) [FAILED]
+```{r}
+library("MatchIt")
+library("dplyr")
+library("readxl")
+library(phyloseq)
+library(ANCOMBC)
+library(mia)
+library(tidyr)
+library(tibble)
+library(ggplot2)   
+library(ggExtra)
+library(ggpubr) 
+library(rcompanion)
+library(stringr)
+
+source("main/SECOM_functions.R")
+
+custom_colors_hp_long <- c("Healthy" = "#49b9a5", "Healthy_follow-up" = "#a7d9c1", "Preclinical" = "#eebe61",
+                           "Preclinical_follow-up" = "#e9d8b5")
+
+ps_p_closest <- ps_mtg_single_tp.hp %>% subset_samples(AD_Status == "Preclinical")
+ps_h_closest <- ps_mtg_single_tp.hp %>% subset_samples(AD_Status == "Healthy")
+
+p_closest_meta <- data.frame(sample_data(ps_p_closest))
+h_closest_meta <- data.frame(sample_data(ps_h_closest))
+
+## Match h_closest to p_closest based on metadata
+hp_last_meta <- rbind(p_closest_meta, h_closest_meta)
+
+ps_mtg_single_tp.hp_meta_filt <- ps_mtg_single_tp.hp_meta %>% select(c(Sample_ID, Stool_Date_Collected, ID, age, sex, race, BMI, apoe4.carriage, Diabetes_binary, Hypertension_binary, AD_Status)) %>% filter(complete.cases(.)) # Eliminating rows with NAs 
+
+hp_closest_matched.out <- matchit(AD_Status ~ age + sex + race + BMI + apoe4.carriage + Diabetes_binary + Hypertension_binary, 
+                 data = ps_mtg_single_tp.hp_meta_filt, distance = "mahalanobis",
+                 replace = FALSE)
+#Plot balance
+plot(summary(hp_closest_matched.out))
+
+matched_df <- get_matches(hp_closest_matched.out, data=ps_mtg_single_tp.hp_meta_filt, distance = "prop.score")
+dim(matched_df)
+
+matched_df2 <- match.data(hp_closest_matched.out, data=ps_mtg_single_tp.hp_meta_filt, distance = "prop.score")
+
+match_matrix <- data.frame(hp_closest_matched.out$match.matrix)
+colnames(match_matrix) <- c("Match1")
+match_matrix$Match2 <- rownames(match_matrix)
+
+# Filter out healthy samples with no match (these are the samples we won't calculate networks on)
+match_matrix2 <- match_matrix %>%
+  filter(!is.na(Match1))
+
+# Create metadata for matched pairs 
+## subset to variables that I wanted to match for
+hp_closest_meta_matched <- ps_mtg_single_tp.hp_meta_filt %>%
+  select(c("Sample_ID", "Stool_Date_Collected", "age", "sex","race","BMI", "apoe4.carriage", "Diabetes_binary", "Hypertension_binary","AD_Status"))
+#write.csv(hp_last_meta_matched, "250815_HP_last_meta_matched.csv", row.names = F)
+
+# Change the name of column "Match1" to "Sample_ID" to merge with metadata
+match_matrix2 <- match_matrix2 %>%
+  dplyr::rename(Sample_ID = Match1)
+# Merge
+meta_hp_closest_match <- merge(match_matrix2, hp_closest_meta_matched, by = "Sample_ID")
+# Change column names
+meta_hp_closest_match <- meta_hp_closest_match %>%
+  dplyr::rename(Sample_ID_healthy = Sample_ID) %>%
+  dplyr::rename(Sample_ID = Match2)
+# Merge with Match2 metadata
+meta_hp_closest_match <- merge(meta_hp_closest_match, hp_closest_meta_matched, by = "Sample_ID", suffixes = c("_healthy","_preclinical"))
+# Change column names
+meta_hp_closest_match <- meta_hp_closest_match %>%
+  dplyr::rename(Sample_ID_preclinical = Sample_ID) %>%
+  select(Sample_ID_healthy, everything())
+write.csv(meta_hp_closest_match, "250825_HP_closest_match.csv", row.names = F)
+
+#### Subset each phyloseq object to the selected samples based on matching metadata########
+h_closest_matched <- matched_df2 %>% filter(AD_Status == "Healthy")
+p_closest_matched <- matched_df2 %>% filter(AD_Status == "Preclinical")
+
+ps_mtg_closest_h.matched <- prune_samples(rownames(ps_mtg_single_tp.hp@sam_data) %in% h_closest_matched$Sample_ID, ps_mtg_single_tp.hp)
+ps_mtg_closest_p.matched <- prune_samples(rownames(ps_mtg_single_tp.hp@sam_data) %in% p_closest_matched$Sample_ID, ps_mtg_single_tp.hp)
+
+######################---------------- SECOM --------------- #############################
+tso_mtg_h_closest_matched = mia::convertFromPhyloseq(ps_mtg_closest_h.matched) # 60 samples
+tso_mtg_p_closest_matched = mia::convertFromPhyloseq(ps_mtg_closest_p.matched) # 60 samples
+
+set.seed(123)
+res_linear_h_closest_matched = secom_linear(data = list(tso_mtg_h_closest_matched), assay_name = "counts",
+                                                    tax_level = NULL, pseudo = 0, 
+                                                    prv_cut = 0, lib_cut = 0, corr_cut = 0.6, 
+                                                    wins_quant = c(0.05, 0.95), method = "pearson", 
+                                                    soft = FALSE, thresh_len = 20, n_cv = 10, 
+                                                    thresh_hard = 0.3, max_p = 0.05, n_cl = 2)
+res_linear_p_closest_matched = secom_linear(data = list(tso_mtg_p_closest_matched), assay_name = "counts",
+                                                    tax_level = NULL, pseudo = 0, 
+                                                    prv_cut = 0, lib_cut = 0, corr_cut = 0.6, 
+                                                    wins_quant = c(0.05, 0.95), method = "pearson", 
+                                                    soft = FALSE, thresh_len = 20, n_cv = 10, 
+                                                    thresh_hard = 0.3, max_p = 0.05, n_cl = 2)
+set.seed(123)
+P_closest_res_linear_network.matched <- calc_secom_network_properties(res_linear_p_closest_matched, overlap_threshold = 10, cor_threshold = 0.6) 
+H_closest_res_linear_network.matched <- calc_secom_network_properties(res_linear_h_closest_matched, overlap_threshold = 10, cor_threshold = 0.6)
+
+write.csv(P_closest_res_linear_network.matched$nodes, "250825_secom_linear_preclinical_closest_nodes_subsampled.csv", row.names = F)
+write.csv(P_closest_res_linear_network.matched$edges, "250825_secom_linear_preclinical_closest_edges_subsampled.csv", row.names = F)
+#write.csv(P_closest_res_linear_network$linear_relations_df, "250527_secom_linear_preclinical_closest_gephi_relations.csv", row.names = F)
+
+write.csv(H_closest_res_linear_network.matched$nodes, "250825_secom_linear_healthy_closest_nodes_subsampled.csv", row.names = F)
+write.csv(H_closest_res_linear_network.matched$edges, "250825_secom_linear_healthy_closest_edges_subsampled.csv", row.names = F)
+
+####################------------------ Compare hubbiness metrics between networks -----------------###################
+#### Closest: cross-sectional ########
+hub_metrics_h_closest.matched <- H_closest_res_linear_network.matched$nodes %>%
+  mutate(Group = "Healthy")
+hub_metrics_p_closest.matched <- P_closest_res_linear_network.matched$nodes %>%
+  mutate(Group = "Preclinical")
+hub_metrics_closest.matched <- rbind(hub_metrics_h_closest.matched, hub_metrics_p_closest.matched) 
+hub_metrics_closest.matched$Group <- as.factor(hub_metrics_closest.matched$Group)
+hub_metrics_closest.matched$Group <- factor(hub_metrics_closest.matched$Group, levels=c("Healthy","Preclinical"))
+
+bp_closest_degree_hp.matched <- ggplot(hub_metrics_closest.matched, aes(x = Group, y = degree, fill = Group)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  #geom_line(aes(group = Label), color = "gray60", size = 0.8, alpha = 0.6) + # connect same species
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp) +  # Change the palette to suit your preferences
+  scale_color_manual(values = custom_colors_hp) +
+  labs(x = "AD Status",
+       y = "Degree",
+       fill = "AD Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")
+  ) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy", "Preclinical")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.15, # Helps prevent label overlap
+                     size = 6, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("250825_SECOM_network_hp_Degree_subsampled.pdf", plot = bp_closest_degree_hp.matched, bg = "transparent", width = 10, height = 8) 
+
+bp_closest_betweenness_hp.matched <- ggplot(hub_metrics_closest.matched, aes(x = Group, y = betweenness, fill = Group)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  #geom_line(aes(group = Label), color = "gray60", size = 0.8, alpha = 0.6) + # connect same species
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp) +  # Change the palette to suit your preferences
+  scale_color_manual(values = custom_colors_hp) +
+  labs(title = "Betweenness centrality of species-species networks by AD Status at closest time point to PET/CSF assessments",
+       subtitle = "Subsampled dataset; Wilcoxon rank sum test (BH corrected)",
+       x = "AD Status",
+       y = "Betweenness Centrality",
+       fill = "AD Status") +
+  theme_minimal() +
+theme(axis.text.x = element_blank(),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")
+  ) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy", "Preclinical")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.15, # Helps prevent label overlap
+                     size = 6, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("250825_SECOM_network_hp_Betweenness_subsampled.pdf", plot = bp_closest_betweenness_hp.matched, bg = "transparent", width = 10, height = 8)
+
+bp_closest_closeness_hp.matched <- ggplot(hub_metrics_closest.matched, aes(x = Group, y = closeness, fill = Group)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  #geom_line(aes(group = Label), color = "gray60", size = 0.8, alpha = 0.6) + # connect same species
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp) +  # Change the palette to suit your preferences
+  scale_color_manual(values = custom_colors_hp) +
+  labs(x = "AD Status",
+       y = "Closeness Centrality",
+       fill = "AD Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")
+  ) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy", "Preclinical")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.15, # Helps prevent label overlap
+                     size = 6, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("250825_SECOM_network_hp_Closeness_subsampled.pdf", plot = bp_closest_closeness_hp.matched, bg = "transparent", width = 10, height = 8)
+
+bp_closest_coreness_hp.matched <- ggplot(hub_metrics_closest.matched, aes(x = Group, y = Coreness, fill = Group)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  #geom_line(aes(group = Label), color = "gray60", size = 0.8, alpha = 0.6) + # connect same species
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_AD) +  # Change the palette to suit your preferences
+  scale_color_manual(values = custom_colors_AD) +
+  labs(x = "AD Status",
+       y = "Coreness",
+       fill = "AD Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 50, hjust = 1, size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")
+  ) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy", "Preclinical")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.15, # Helps prevent label overlap
+                     size = 6, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("250825_SECOM_network_hp_Coreness_subsampled.pdf", plot = bp_closest_coreness_hp.matched, bg = "transparent", width = 10, height = 8)
+
+bp_closest_efficiency_hp.matched <- ggplot(hub_metrics_closest.matched, aes(x = Group, y = local_efficiency, fill = Group)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  #geom_line(aes(group = Label), color = "gray60", size = 0.8, alpha = 0.6) + # connect same species
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp) +  # Change the palette to suit your preferences
+  scale_color_manual(values = custom_colors_hp) +
+  labs(x = "AD Status",
+       y = "Local Efficiency",
+       fill = "AD Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")
+  ) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy", "Preclinical")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.15, # Helps prevent label overlap
+                     size = 6, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("250825_SECOM_network_hp_Efficiency_subsampled.pdf", plot = bp_closest_efficiency_hp.matched, bg = "transparent", width = 10, height = 8)
+
+
+
+```
+
+
+Figure 3: Stool Inflammatory markers
+```{r}
+ps_mtg_single_tp_hp_meta <- ps_mtg_single_tp.hp_meta
+ps_mtg_single_tp_hp_meta$apoe.dose <- relevel(factor(ps_mtg_single_tp_hp_meta$apoe.dose), ref = "0")
+ps_mtg_single_tp_hp_meta$apoe4.carriage <- relevel(factor(ps_mtg_single_tp_hp_meta$apoe4.carriage), ref = "0")
+ps_mtg_single_tp_hp_meta$Diabetes <- relevel(factor(ps_mtg_single_tp_hp_meta$Diabetes), ref = "0")
+ps_mtg_single_tp_hp_meta$Hypertension <- relevel(factor(ps_mtg_single_tp_hp_meta$Hypertension), ref = "0")
+ps_mtg_single_tp_hp_meta$AD_Status <- relevel(factor(ps_mtg_single_tp_hp_meta$AD_Status), ref = "Healthy")
+
+NGAL_sample_sizes_ad_status <- ps_mtg_single_tp_hp_meta %>%
+  filter(!is.na(log2_NGAL)) %>%
+  group_by(AD_Status) %>%
+  summarise(n = n(), .groups = 'drop')  # Create a summary with sample sizes
+
+df_single_tp_hp_ngal <- ps_mtg_single_tp_hp_meta %>%
+  select(c(Sample_ID, ID, log2_NGAL, age, sex, BMI, apoe4.carriage, Diabetes, Hypertension, AD_Status)) %>%
+  filter(complete.cases(.)) # Eliminating rows with NAs 
+
+options(na.action='na.fail')
+ngal.model <- lm(log2_NGAL ~ age + sex + BMI + apoe4.carriage + Diabetes + Hypertension + AD_Status, data = df_single_tp_hp_ngal)
+summary(ngal.model)
+ngal_model_summary <- tidy(ngal.model)
+#ngal_model_summary$q.value <- p.adjust(ngal_model_summary$p.value, method = "BH")
+write.csv(ngal_model_summary, "251124_log2_NGAL_singletp_lm_summary_hp.csv", row.names = F)
+
+####### ANCOVA Results ############
+Anova(ngal.model, type = 2)
+
+#### Adjusted EMMs
+ngal_emm <- pairs(emmeans(ngal.model, ~ AD_Status), adjust = "none")
+summary(ngal_emm)
+
+ngal_ad_comp <- as.data.frame(ngal_emm)
+write.csv(ngal_ad_comp, "251124_NGAL_AD_LMM_emmeans_results.csv", row.names = F)
+ngal_ad_sig <- ngal_ad_comp %>%
+  filter(p.value < 0.05) %>%
+  mutate(
+    label = paste0("p = ", signif(p.value, 2)),
+    group1 = gsub("[()]", "", gsub(" -.*", "", contrast)),
+    group2 = gsub("[()]", "", gsub(".*- ", "", contrast))
+  )
+
+### LMM BH-corrected p-values
+p_NGAL_hp <- ggplot(ps_mtg_single_tp_hp_meta, aes(x = AD_Status, y = log2_NGAL, fill = AD_Status)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = AD_Status),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp) +  
+  scale_color_manual(values = custom_colors_hp) +
+  labs(x = "AD Status",
+       y = "Log2 Stool NGAL (ug/mL)",
+       fill = "AD Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 50, hjust = 1, size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        legend.title = element_text(size = 16),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10)) +  # Increase bottom margin
+  coord_cartesian(clip = "off")   # Prevents clipping of points at the bottom
+
+y_positions <- ps_mtg_single_tp_hp_meta %>%
+  group_by(AD_Status) %>%
+  summarise(y_max = max(log2_NGAL, na.rm = TRUE)) %>%
+  deframe()
+
+step_height <- 0.5
+for(i in seq_len(nrow(ngal_ad_sig))) {
+  g1 <- ngal_ad_sig$group1[i]
+  g2 <- ngal_ad_sig$group2[i]
+  label <- ngal_ad_sig$label[i]
+  
+  # x-axis positions
+  x1 <- which(levels(ps_mtg_single_tp_filt_meta$AD_Status) == g1)
+  x2 <- which(levels(ps_mtg_single_tp_filt_meta$AD_Status) == g2)
+  
+  # y-axis position: a bit above boxplots
+  y <- max(y_positions[c(g1,g2)], na.rm = TRUE) + step_height * i
+  
+  p_NGAL_hp <- p_NGAL_hp + 
+    annotate("segment", x = x1, xend = x2, y = y, yend = y) +
+    annotate("text", x = mean(c(x1, x2)), y = y + 0.1, label = label, size = 4.5)
+}
+ggsave("251124_NGAL_LMM_pvalues_AD_Status_HP.pdf", plot = p_NGAL_hp, bg = "transparent", width = 10, height = 8) 
+
+############# Calprotectin ###########
+single_tp_hp_calp <- ps_mtg_single_tp_hp_meta %>%
+  select(c(Sample_ID, ID, log2_Calp, age, sex, BMI, apoe4.carriage, Diabetes, Hypertension, AD_Status)) %>%
+  filter(complete.cases(.)) # Eliminating rows with NAs 
+
+options(na.action='na.fail')
+calp.model <- lm(log2_Calp ~ age + sex + BMI + apoe4.carriage + Diabetes + Hypertension + AD_Status, data = single_tp_hp_calp)
+summary(calp.model)
+
+calp_model_summary <- tidy(calp.model)
+calp_model_summary$q.value <- p.adjust(calp_model_summary$p.value, method = "BH")
+write.csv(calp_model_summary, "251124_log2_Calprotectin_singletp_lm_summary_ALL.csv", row.names = F)
+
+## ANCOVA model ##
+####### ANCOVA Results ############
+Anova(calp.model, type = 2)
+
+#### Adjusted EMMs
+calp_emm <- pairs(emmeans(calp.model, ~ AD_Status), adjust = "none")
+summary(calp_emm)
+calp_ad_comp <- as.data.frame(calp_emm)
+write.csv(calp_ad_comp, "251124_Calp_AD_LMM_emmeans_results.csv", row.names = F)
+
+calp_ad_sig <- calp_ad_comp %>%
+  filter(p.value < 0.05) %>%
+  mutate(
+    label = paste0("p = ", signif(p.value, 2)),
+    group1 = gsub("[()]", "", gsub(" -.*", "", contrast)),
+    group2 = gsub("[()]", "", gsub(".*- ", "", contrast))
+  )
+# If needing to infer 95% CIs
+# summary(calp_emm, infer = c(TRUE, TRUE))
+# calp_ad_comp <- as.data.frame(calp_emm)
+# #calp_ad_comp$BH.adj.p <- p.adjust(calp_ad_comp$p.value, method = "BH")
+# write.csv(calp_ad_comp, "251124_Calp_AD_LMM_emmeans_results.csv", row.names = F)
+
+p_Calp_hp <- ggplot(ps_mtg_single_tp_hp_meta, aes(x = AD_Status, y = log2_Calp, fill = AD_Status)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = AD_Status),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp) +  
+  scale_color_manual(values = custom_colors_hp) +
+  labs(x = "AD Status",
+       y = "Log2 Stool Calprotectin (ug/mL)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 50, hjust = 1, size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        legend.title = element_text(size = 16),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10)) +  # Increase bottom margin
+  coord_cartesian(clip = "off") 
+#ggsave("250714_Calp_singletp_boxplots_AD_Status_ALL.pdf", plot = p_Calp_ad_status_all, bg = "transparent", width = 10, height = 8) 
+
+y_positions <- ps_mtg_single_tp_hp_meta %>%
+  group_by(AD_Status) %>%
+  summarise(y_max = max(log2_Calp, na.rm = TRUE)) %>%
+  deframe()
+
+step_height <- 0.5
+for(i in seq_len(nrow(calp_ad_sig))) {
+  g1 <- calp_ad_sig$group1[i]
+  g2 <- calp_ad_sig$group2[i]
+  label <- calp_ad_sig$label[i]
+  
+  # x-axis positions
+  x1 <- which(levels(ps_mtg_single_tp_filt_meta$AD_Status) == g1)
+  x2 <- which(levels(ps_mtg_single_tp_filt_meta$AD_Status) == g2)
+  
+  # y-axis position: a bit above boxplots
+  y <- max(y_positions[c(g1,g2)], na.rm = TRUE) + step_height * i
+  
+  p_Calp_hp <- p_Calp_hp + 
+    annotate("segment", x = x1, xend = x2, y = y, yend = y) +
+    annotate("text", x = mean(c(x1, x2)), y = y + 0.25, label = label, size = 4.5)
+}
+ggsave("251124_Calp_LMM_pvalues_AD_Status_HP.pdf", plot = p_Calp_hp, bg = "transparent", width = 10, height = 8) 
+
+### Combined NGAL + Calprotectin plot
+combined_inflamm_plot_hor <- p_NGAL_hp | p_Calp_hp
+ggsave("Fig_3A_hor_hp.pdf", plot = combined_inflamm_plot_hor, bg = "transparent", width = 14, height = 8)
+#ggsave("Fig_3A_hor_hp.svg", plot = combined_inflamm_plot_hor, bg = "transparent", width = 14, height = 8, units = "in")
+
+############## By AT Status ##############
+
+mtg_single_tp.at.hp_meta <- data.frame(phyloseq::sample_data(ps_mtg_single_tp.hp.at))
+
+single_tp_at_ngal <- mtg_single_tp.at.hp_meta %>%
+  select(c(Sample_ID, ID, log2_NGAL, age, sex, BMI, apoe4.carriage, Diabetes, Hypertension, amyloid_tau_status)) %>%
+  filter(complete.cases(.)) # Eliminating rows with NAs 
+
+options(na.action='na.fail')
+ngal_at.model <- lm(log2_NGAL ~ age + sex + BMI + apoe4.carriage + Diabetes + Hypertension + amyloid_tau_status, data = single_tp_at_ngal)
+summary(ngal_at.model)
+ngal_at_model_summary <- tidy(ngal_at.model)
+ngal_at_model_summary$q.value <- p.adjust(ngal_at_model_summary$p.value, method = "BH")
+write.csv(ngal_at_model_summary, "251124_log2_NGAL_singletp_lm_summary_ALL.csv", row.names = F)
+
+### ANCOVA results
+Anova(ngal_at.model, type = 2) # p-value for amyloid_tau_status = 0.005
+
+## Adjusted means (EMMs)
+ngal_at_emm <- pairs(emmeans(ngal_at.model, ~ amyloid_tau_status), adjust = "none")
+summary(ngal_at_emm)
+ngal_at_comp <- as.data.frame(ngal_at_emm)
+ngal_at_comp$BH.adj.p <- p.adjust(ngal_at_comp$p.value, method = "BH")
+write.csv(ngal_at_comp, "251124_NGAL_AT_LMM_emmeans_results.csv", row.names = F)
+ngal_at_sig <- ngal_at_comp %>%
+  filter(p.value < 0.05) %>%
+  mutate(
+    label = paste0("unadj. p = ", signif(p.value, 2)),
+    group1 = gsub("[()]", "", gsub(" -.*", "", contrast)),
+    group2 = gsub("[()]", "", gsub(".*- ", "", contrast))
+  )
+write.csv(ngal_at_sig, "251124_NGAL_AT_BH_adj_LMM_emmeans_signif_results.csv", row.names = F)
+
+p_NGAL_at_status <- ggplot(mtg_single_tp.at.hp_meta, aes(x = amyloid_tau_status, y = log2_NGAL, fill = amyloid_tau_status)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = amyloid_tau_status),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_at_status) + 
+  scale_color_manual(values = custom_colors_at_status) +
+  labs(x = "Amyloid Tau Status",
+       y = "Log2 Stool NGAL (ug/mL)",
+       fill = "Amyloid Tau Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 50, hjust = 1, size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        legend.title = element_text(size = 16),
+        legend.text = element_text(size = 13),
+        legend.position = "none",
+        legend.background = element_rect(fill = "white", color = "black"),
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10)) +  # Increase bottom margin
+  coord_cartesian(clip = "off")   # Prevents clipping of points at the bottom
+
+y_positions <- mtg_single_tp.at.hp_meta %>%
+  group_by(amyloid_tau_status) %>%
+  summarise(y_max = max(log2_NGAL, na.rm = TRUE)) %>%
+  deframe()
+
+step_height <- 0.5
+for(i in seq_len(nrow(ngal_at_sig))) {
+  g1 <- ngal_at_sig$group1[i]
+  g2 <- ngal_at_sig$group2[i]
+  label <- ngal_at_sig$label[i]
+  
+  # x-axis positions
+  x1 <- which(levels(mtg_single_tp.at.hp_meta$amyloid_tau_status) == g1)
+  x2 <- which(levels(mtg_single_tp.at.hp_meta$amyloid_tau_status) == g2)
+  
+  # y-axis position: a bit above boxplots
+  y <- max(y_positions[c(g1,g2)], na.rm = TRUE) + step_height * i
+  
+  p_NGAL_at_status <- p_NGAL_at_status + 
+    annotate("segment", x = x1, xend = x2, y = y, yend = y) +
+    annotate("text", x = mean(c(x1, x2)), y = y + 0.2, label = label, size = 4.5)
+}
+ggsave("251124_NGAL_LMM_pvalues_AT_Status_HP.pdf", plot = p_NGAL_at_status, bg = "transparent", width = 10, height = 8) 
+
+############# Calprotectin ##########
+single_tp_at_calp <- mtg_single_tp.at.hp_meta %>%
+  select(c(Sample_ID, ID, log2_Calp, age, sex, BMI, apoe4.carriage, Diabetes, Hypertension, amyloid_tau_status)) %>%
+  filter(complete.cases(.)) # Eliminating rows with NAs 
+
+options(na.action='na.fail')
+calp_at.model <- lm(log2_Calp ~ age + sex + BMI + apoe4.carriage + Diabetes + Hypertension + amyloid_tau_status, data = single_tp_at_calp)
+summary(calp_at.model)
+calp_at_model_summary <- tidy(calp_at.model)
+calp_at_model_summary$q.value <- p.adjust(calp_at_model_summary$p.value, method = "BH")
+write.csv(calp_at_model_summary, "251124_log2_Calp_singletp_lm_summary_HP.csv", row.names = F)
+
+### ANCOVA results
+Anova(calp_at.model, type = 2) # p-value for amyloid_tau_status = 0.001
+
+## Adjusted means (EMMs)
+calp_at_emm <- pairs(emmeans(calp_at.model, ~ amyloid_tau_status), adjust = "none")
+summary(calp_at_emm)
+calp_at_comp <- as.data.frame(calp_at_emm)
+calp_at_comp$BH.adj.p <- p.adjust(calp_at_comp$p.value, method = "BH")
+write.csv(calp_at_comp, "251124_Calp_AT_LMM_emmeans_results.csv", row.names = F)
+calp_at_sig <- calp_at_comp %>%
+  filter(p.value < 0.05) %>%
+  mutate(
+    label = paste0("unadj. p = ", signif(p.value, 2)),
+    group1 = gsub("[()]", "", gsub(" -.*", "", contrast)),
+    group2 = gsub("[()]", "", gsub(".*- ", "", contrast))
+  )
+write.csv(calp_at_sig, "251124_Calp_AT_BH_adj_LMM_emmeans_signif_results.csv", row.names = F)
+
+p_Calp_at_status <- ggplot(mtg_single_tp.at.hp_meta, aes(x = amyloid_tau_status, y = log2_Calp, fill = amyloid_tau_status)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = amyloid_tau_status),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_at_status) + 
+  scale_color_manual(values = custom_colors_at_status) +
+  labs(x = "Amyloid Tau Status",
+       y = "Log2 Stool Calprotectin (ug/mL)",
+       fill = "Amyloid Tau Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 50, hjust = 1, size = 14),
+        axis.text.y = element_text(size = 14),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 16),
+        legend.title = element_text(size = 16),
+        legend.text = element_text(size = 13),
+        legend.position = "none",
+        legend.background = element_rect(fill = "white", color = "black"),
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10)) +  # Increase bottom margin
+  coord_cartesian(clip = "off")   # Prevents clipping of points at the bottom
+
+y_positions <- mtg_single_tp.at.hp_meta %>%
+  group_by(amyloid_tau_status) %>%
+  summarise(y_max = max(log2_Calp, na.rm = TRUE)) %>%
+  deframe()
+
+step_height <- 0.6
+for(i in seq_len(nrow(calp_at_sig))) {
+  g1 <- calp_at_sig$group1[i]
+  g2 <- calp_at_sig$group2[i]
+  label <- calp_at_sig$label[i]
+  
+  # x-axis positions
+  x1 <- which(levels(mtg_single_tp.at.hp_meta$amyloid_tau_status) == g1)
+  x2 <- which(levels(mtg_single_tp.at.hp_meta$amyloid_tau_status) == g2)
+  
+  # y-axis position: a bit above boxplots
+  y <- max(y_positions[c(g1,g2)], na.rm = TRUE) + step_height * i
+  
+  p_Calp_at_status <- p_Calp_at_status + 
+    annotate("segment", x = x1, xend = x2, y = y, yend = y) +
+    annotate("text", x = mean(c(x1, x2)), y = y + 0.2, label = label, size = 4.5)
+}
+ggsave("251124_Calp_LMM_pvalues_AT_Status_HP.pdf", plot = p_Calp_at_status, bg = "transparent", width = 10, height = 8) 
+
+### Combined NGAL + Calprotectin plot
+combined_inflamm_plot_hor_AT <- p_NGAL_at_status | p_Calp_at_status
+ggsave("Fig_3B_hor_hp.pdf", plot = combined_inflamm_plot_hor_AT, bg = "transparent", width = 14, height = 8)
+
+#### Longitudinal stool inflammation markers #####
+long_df <- read_excel("~/Library/CloudStorage/Box-Box/DantasLab/AD_microbiome/Paper2/Final_Cohort_summaries/250718_longitudinal_stability_cohort_meta.xlsx")
+long_df$AD_Status <- as.factor(long_df$AD_Status)
+cat_vars <- c('sex', 'apoe4.carriage', 'Diabetes', 'Hypertension', 'AD_Status', 'ID')
+num_vars <- c('age', 'BMI')
+elisa_long_df <- ps_mtg_long_hp_meta %>% filter(Sample_ID %in% long_df$Sample_ID)
+elisa_long_df <- elisa_long_df %>% mutate(across(all_of(cat_vars), as.factor)) %>%
+  mutate(across(all_of(num_vars), as.numeric))
+
+elisa_long_df$apoe4.carriage <- relevel(factor(elisa_long_df$apoe4.carriage), ref = "0")
+elisa_long_df$Diabetes <- relevel(factor(elisa_long_df$Diabetes), ref = "0")
+elisa_long_df$Hypertension <- relevel(factor(elisa_long_df$Hypertension), ref = "0")
+elisa_long_df$AD_Status <- relevel(factor(elisa_long_df$AD_Status), ref = "Healthy")
+
+NGAL_long_sample_sizes_ad_status <- elisa_long_df %>%
+  filter(!is.na(log2_NGAL)) %>%
+  group_by(AD_Status) %>%
+  summarise(n = n(), .groups = 'drop')  # Create a summary with sample sizes
+
+elisa_long_df_filt <- elisa_long_df %>%
+  select(c(Sample_ID, ID, Stool_Date_Collected, log2_Calp, log2_NGAL, age, sex, BMI, apoe4.carriage, Diabetes, Hypertension, AD_Status, amyloid_tau_status)) %>%
+  filter(complete.cases(.)) # Eliminating rows with NAs 
+
+options(na.action='na.fail')
+long_ngal.null <- lmer(log2_NGAL ~ age + sex + BMI + apoe4.carriage + Diabetes + Hypertension + (1 | ID), data = elisa_long_df_filt, REML = FALSE)
+long_ngal.model <- lmer(log2_NGAL ~ age + sex + BMI + apoe4.carriage + Diabetes + Hypertension + AD_Status + (1 | ID), data = elisa_long_df_filt, REML = FALSE)
+summary(long_ngal.model)
+anova(long_ngal.null, long_ngal.model)
+
+#### Adjusted EMMs
+long_ngal_emm <- pairs(emmeans(long_ngal.model, ~ AD_Status), adjust = "none")
+summary(long_ngal_emm)
+
+long_ngal_ad_comp <- as.data.frame(long_ngal_emm)
+write.csv(long_ngal_ad_comp, "260105_Long_NGAL_AD_LMM_emmeans_results.csv", row.names = F)
+long_ngal_ad_sig <- long_ngal_ad_comp %>%
+  mutate(
+    label = paste0("p = ", signif(p.value, 2)),
+    group1 = gsub("[()]", "", gsub(" -.*", "", contrast)),
+    group2 = gsub("[()]", "", gsub(".*- ", "", contrast))
+  )
+
+### LMM BH-corrected p-values
+p_long_NGAL_hp <- ggplot(elisa_long_df_filt, aes(x = AD_Status, y = log2_NGAL, fill = AD_Status)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = AD_Status),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp) +  
+  scale_color_manual(values = custom_colors_hp) +
+  labs(x = "AD Status",
+       y = "Log2 Stool NGAL (ug/mL)",
+       fill = "AD Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 50, hjust = 1, size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        legend.title = element_text(size = 16),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10)) +  # Increase bottom margin
+  coord_cartesian(clip = "off")    # Prevents clipping of points at the bottom
+
+## Return here 
+y_positions <- df_long_hp_ngal %>%
+  group_by(AD_Status) %>%
+  summarise(y_max = max(log2_NGAL, na.rm = TRUE)) %>%
+  deframe()
+
+step_height <- 0.5
+for(i in seq_len(nrow(long_ngal_ad_sig))) {
+  g1 <- long_ngal_ad_sig$group1[i]
+  g2 <- long_ngal_ad_sig$group2[i]
+  label <- long_ngal_ad_sig$label[i]
+  
+  # x-axis positions
+  x1 <- which(levels(elisa_long_df_filt$AD_Status) == g1)
+  x2 <- which(levels(elisa_long_df_filt$AD_Status) == g2)
+  
+  # y-axis position: a bit above boxplots
+  y <- max(y_positions[c(g1,g2)], na.rm = TRUE) + step_height * i
+  
+  p_long_NGAL_hp <- p_long_NGAL_hp + 
+    annotate("segment", x = x1, xend = x2, y = y, yend = y) +
+    annotate("text", x = mean(c(x1, x2)), y = y + 0.1, label = label, size = 4.5)
+}
+ggsave("260105_Long_NGAL_LMM_pvalues_AD_Status_HP.pdf", plot = p_long_NGAL_hp, bg = "transparent", width = 10, height = 8) 
+
+
+######## ATN Split ########
+p_long_NGAL_atn <- ggplot(elisa_long_df_filt, aes(x = amyloid_tau_status, y = log2_NGAL, fill = amyloid_tau_status)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = AD_Status),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_at_status) +  
+  scale_color_manual(values = custom_colors_at_status) +
+  labs(x = "Amyloid Tau Status",
+       y = "Log2 Stool NGAL (ug/mL)",
+       fill = "Amyloid Tau Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 50, hjust = 1, size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        legend.title = element_text(size = 16),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10)) +  # Increase bottom margin
+  coord_cartesian(clip = "off")    # Prevents clipping of points at the bottom
+
+options(na.action='na.fail')
+long_ngal.null <- lmer(log2_NGAL ~ age + sex + BMI + apoe4.carriage + Diabetes + Hypertension + (1 | ID), data = elisa_long_df_filt, REML = FALSE)
+long_ngal_atn.model <- lmer(log2_NGAL ~ age + sex + BMI + apoe4.carriage + Diabetes + Hypertension + amyloid_tau_status + (1 | ID), data = elisa_long_df_filt, REML = FALSE)
+summary(long_ngal_atn.model)
+anova(long_ngal.null, long_ngal_atn.model)
+
+#### Adjusted EMMs
+long_ngal_atn_emm <- pairs(emmeans(long_ngal_atn.model, ~ amyloid_tau_status), adjust = "BH")
+summary(long_ngal_atn_emm)
+
+long_ngal_at_comp <- as.data.frame(long_ngal_atn_emm)
+write.csv(long_ngal_ad_comp, "260105_long_NGAL_AT_LMM_emmeans_results.csv", row.names = F)
+long_ngal_at_sig <- long_ngal_at_comp %>%
+  mutate(
+    label = paste0("p = ", signif(p.value, 2)),
+    group1 = gsub("[()]", "", gsub(" -.*", "", contrast)),
+    group2 = gsub("[()]", "", gsub(".*- ", "", contrast))
+  )
+
+## Return here 
+y_positions <- elisa_long_df_filt %>%
+  group_by(amyloid_tau_status) %>%
+  summarise(y_max = max(log2_NGAL, na.rm = TRUE)) %>%
+  deframe()
+
+step_height <- 0.6
+for(i in seq_len(nrow(long_ngal_at_sig))) {
+  g1 <- long_ngal_at_sig$group1[i]
+  g2 <- long_ngal_at_sig$group2[i]
+  label <- long_ngal_at_sig$label[i]
+  
+  # x-axis positions
+  x1 <- which(levels(elisa_long_df_filt$amyloid_tau_status) == g1)
+  x2 <- which(levels(elisa_long_df_filt$amyloid_tau_status) == g2)
+  
+  # y-axis position: a bit above boxplots
+  y <- max(y_positions[c(g1,g2)], na.rm = TRUE) + step_height * i
+  
+  p_long_NGAL_atn <- p_long_NGAL_atn + 
+    annotate("segment", x = x1, xend = x2, y = y, yend = y) +
+    annotate("text", x = mean(c(x1, x2)), y = y + 0.2, label = label, size = 4.5)
+}
+ggsave("260105_Long_NGAL_LMM_pvalues_AT_Status_HP.pdf", plot = p_long_NGAL_atn, bg = "transparent", width = 10, height = 8) 
+
+#########---Calprotectin-----------#########################
+options(na.action='na.fail')
+long_calp.null <- lmer(log2_Calp ~ age + sex + BMI + apoe4.carriage + Diabetes + Hypertension + (1 | ID), data = elisa_long_df_filt, REML = FALSE)
+long_calp.model <- lmer(log2_Calp ~ age + sex + BMI + apoe4.carriage + Diabetes + Hypertension + AD_Status + (1 | ID), data = elisa_long_df_filt, REML = FALSE)
+summary(long_calp.model)
+anova(long_calp.null, long_calp.model)
+
+#### Adjusted EMMs
+long_calp_emm <- pairs(emmeans(long_calp.model, ~ AD_Status), adjust = "none")
+summary(long_calp_emm)
+
+long_calp_ad_comp <- as.data.frame(long_calp_emm)
+write.csv(long_calp_ad_comp, "260105_Long_NGAL_AD_LMM_emmeans_results.csv", row.names = F)
+long_calp_ad_sig <- long_calp_ad_comp %>%
+  mutate(
+    label = paste0("p = ", signif(p.value, 2)),
+    group1 = gsub("[()]", "", gsub(" -.*", "", contrast)),
+    group2 = gsub("[()]", "", gsub(".*- ", "", contrast))
+  )
+
+### Plot
+p_long_calp_hp <- ggplot(elisa_long_df_filt, aes(x = AD_Status, y = log2_Calp, fill = AD_Status)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = AD_Status),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp) +  
+  scale_color_manual(values = custom_colors_hp) +
+  labs(x = "AD Status",
+       y = "Log2 Stool Calprotectin (ug/mL)",
+       fill = "AD Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 50, hjust = 1, size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        legend.title = element_text(size = 16),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10)) +  # Increase bottom margin
+  coord_cartesian(clip = "off")    # Prevents clipping of points at the bottom
+
+y_positions <- df_long_hp_Calp %>%
+  group_by(AD_Status) %>%
+  summarise(y_max = max(log2_Calp, na.rm = TRUE)) %>%
+  deframe()
+
+step_height <- 0.5
+for(i in seq_len(nrow(long_calp_ad_sig))) {
+  g1 <- long_calp_ad_sig$group1[i]
+  g2 <- long_calp_ad_sig$group2[i]
+  label <- long_calp_ad_sig$label[i]
+  
+  # x-axis positions
+  x1 <- which(levels(elisa_long_df_filt$AD_Status) == g1)
+  x2 <- which(levels(elisa_long_df_filt$AD_Status) == g2)
+  
+  # y-axis position: a bit above boxplots
+  y <- max(y_positions[c(g1,g2)], na.rm = TRUE) + step_height * i
+  
+  p_long_calp_hp <- p_long_calp_hp + 
+    annotate("segment", x = x1, xend = x2, y = y, yend = y) +
+    annotate("text", x = mean(c(x1, x2)), y = y + 0.2, label = label, size = 4.5)
+}
+ggsave("260105_Long_Calp_LMM_pvalues_AD_Status_HP.pdf", plot = p_long_calp_hp, bg = "transparent", width = 10, height = 8) 
+
+######## Plot by ATN Status ####
+options(na.action='na.fail')
+long_calp.null <- lmer(log2_Calp ~ age + sex + BMI + apoe4.carriage + Diabetes + Hypertension + (1 | ID), data = elisa_long_df_filt, REML = FALSE)
+long_calp_atn.model <- lmer(log2_Calp ~ age + sex + BMI + apoe4.carriage + Diabetes + Hypertension + amyloid_tau_status + (1 | ID), data = elisa_long_df_filt, REML = FALSE)
+summary(long_calp_atn.model)
+anova(long_calp.null, long_calp.model)
+
+#### Adjusted EMMs
+long_calp_emm_atn <- pairs(emmeans(long_calp.model, ~ amyloid_tau_status), adjust = "BH")
+summary(long_calp_emm_atn)
+
+long_calp_at_comp <- as.data.frame(long_calp_emm_atn)
+write.csv(long_calp_at_comp, "260105_Long_NGAL_AT_LMM_emmeans_results.csv", row.names = F)
+long_calp_at_sig <- long_calp_at_comp %>%
+  mutate(
+    label = paste0("p = ", signif(p.value, 2)),
+    group1 = gsub("[()]", "", gsub(" -.*", "", contrast)),
+    group2 = gsub("[()]", "", gsub(".*- ", "", contrast))
+  )
+
+### Plot
+p_long_calp_atn <- ggplot(elisa_long_df_filt, aes(x = amyloid_tau_status, y = log2_Calp, fill = amyloid_tau_status)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = amyloid_tau_status),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp) +  
+  scale_color_manual(values = custom_colors_hp) +
+  labs(x = "AD Status",
+       y = "Log2 Stool Calprotectin (ug/mL)",
+       fill = "AD Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 50, hjust = 1, size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        legend.title = element_text(size = 16),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10)) +  # Increase bottom margin
+  coord_cartesian(clip = "off")    # Prevents clipping of points at the bottom
+
+y_positions <- elisa_long_df_filt %>%
+  group_by(amyloid_tau_status) %>%
+  summarise(y_max = max(log2_Calp, na.rm = TRUE)) %>%
+  deframe()
+
+step_height <- 0.5
+for(i in seq_len(nrow(long_calp_ad_sig))) {
+  g1 <- long_calp_ad_sig$group1[i]
+  g2 <- long_calp_ad_sig$group2[i]
+  label <- long_calp_ad_sig$label[i]
+  
+  # x-axis positions
+  x1 <- which(levels(elisa_long_df_filt$AD_Status) == g1)
+  x2 <- which(levels(elisa_long_df_filt$AD_Status) == g2)
+  
+  # y-axis position: a bit above boxplots
+  y <- max(y_positions[c(g1,g2)], na.rm = TRUE) + step_height * i
+  
+  p_long_calp_hp <- p_long_calp_hp + 
+    annotate("segment", x = x1, xend = x2, y = y, yend = y) +
+    annotate("text", x = mean(c(x1, x2)), y = y + 0.2, label = label, size = 4.5)
+}
+ggsave("260105_Long_Calp_LMM_pvalues_AD_Status_HP.pdf", plot = p_long_calp_hp, bg = "transparent", width = 10, height = 8) 
+
+
+############# Stability of stool inflammation markers over time ############
+elisa_long_df_filt <- elisa_long_df_filt %>%
+  mutate(Stool_Date_Collected = as.Date(Stool_Date_Collected)) %>%
+  group_by(ID) %>%
+  mutate(
+    baseline_date = min(Stool_Date_Collected),
+    time_from_baseline_mo = round(time_length(difftime(Stool_Date_Collected, baseline_date),"months"),2)
+  ) %>%
+  ungroup()
+
+# Plot
+p_NGAL_long_timediff <- ggplot(elisa_long_df_filt, aes(x = time_from_baseline_mo, y = log2_NGAL, color = AD_Status, group = ID)) +
+  geom_point() +  geom_line(linetype = "dashed") +  
+  geom_smooth(aes(group = AD_Status), method = "lm", se = TRUE) +  # Add a linear regression line without confidence intervals
+  scale_color_manual(values = custom_colors_hp) +
+  scale_x_continuous(breaks = seq(0, max(elisa_long_df_filt$time_from_baseline_mo), by = 6)) +  # Set x-axis breaks at every 6 months
+  labs(x = "Time difference from baseline sample (Months)", y = "Log2 Stool NGAL (ug/mL)", color = "AD Status") +  # Label the axes and legend
+  theme_minimal() +
+  theme(
+    text = element_text(size = 16),       # Set general font size
+    axis.title = element_text(size = 18), # Axis titles font size
+    axis.text = element_text(size = 14),  # Axis labels font size
+    legend.title = element_text(size = 16), # Legend title font size
+    legend.text = element_text(size = 14),  # Legend labels font size
+    plot.title = element_text(size = 20, face = "bold"), # Optional: Add a title with larger font size
+    plot.subtitle = element_text(size = 18)) # Optional: Add subtitle with a larger font size
+ggsave("250105_long_log2NGAL_timediff.pdf", plot = p_NGAL_long_timediff, bg = "transparent", width = 10, height = 8)
+
+p_NGAL_long_timediff_AT <- ggplot(elisa_long_df_filt, aes(x = time_from_baseline_mo, y = log2_NGAL, color = amyloid_tau_status, group = ID)) +
+  geom_point() +  geom_line(linetype = "dashed") +  
+  geom_smooth(aes(group = AD_Status), method = "lm", se = TRUE) +  # Add a linear regression line without confidence intervals
+  scale_color_manual(values = custom_colors_at_status) +
+  scale_x_continuous(breaks = seq(0, max(elisa_long_df_filt$time_from_baseline_mo), by = 6)) +  # Set x-axis breaks at every 6 months
+  labs(x = "Time difference from baseline sample (Months)", y = "Log2 Stool NGAL (ug/mL)", color = "AD Status") +  # Label the axes and legend
+  theme_minimal() +
+  theme(
+    text = element_text(size = 16),       # Set general font size
+    axis.title = element_text(size = 18), # Axis titles font size
+    axis.text = element_text(size = 14),  # Axis labels font size
+    legend.title = element_text(size = 16), # Legend title font size
+    legend.text = element_text(size = 14),  # Legend labels font size
+    plot.title = element_text(size = 20, face = "bold"), # Optional: Add a title with larger font size
+    plot.subtitle = element_text(size = 18)) # Optional: Add subtitle with a larger font size
+ggsave("250105_long_log2NGAL_timediff.pdf", plot = p_NGAL_long_timediff, bg = "transparent", width = 10, height = 8)
+
+lmm_ngal.null <- lmer(log2_NGAL ~ time_from_baseline_mo + age + sex + BMI + apoe4.carriage + Diabetes + Hypertension + (1 | ID), data = elisa_long_df_filt, REML = FALSE)
+summary(lmm_ngal.null)
+lmm_ngal.model <- lmer(log2_NGAL ~ time_from_baseline_mo + age + sex + BMI + apoe4.carriage + Diabetes + Hypertension + AD_Status + (1 | ID), data = elisa_long_df_filt, REML = FALSE)
+summary(lmm_ngal.model)
+anova(lmm_ngal.null, lmm_ngal.model)
+
+p_Calp_long_timediff <- ggplot(elisa_long_df_filt, aes(x = time_from_baseline_mo, y = log2_Calp, color = AD_Status, group = ID)) +
+  geom_point() +  geom_line(linetype = "dashed") +   # Connect points belonging to the same ID +
+  geom_smooth(aes(group = AD_Status), method = "lm", se = TRUE) +  # Add a linear regression line without confidence intervals
+  scale_color_manual(values = custom_colors_hp) +
+  scale_x_continuous(breaks = seq(0, max(elisa_long_df_filt$time_from_baseline_mo), by = 6)) +  # Set x-axis breaks at every 6 months
+  labs(x = "Time difference from baseline sample (Months)", y = "Log2 Stool Calprotectin (ug/mL)", color = "AD Status") +  # Label the axes and legend
+  theme_minimal() +
+  theme(
+    text = element_text(size = 16),       # Set general font size
+    axis.title = element_text(size = 18), # Axis titles font size
+    axis.text = element_text(size = 14),  # Axis labels font size
+    legend.title = element_text(size = 16), # Legend title font size
+    legend.text = element_text(size = 14),  # Legend labels font size
+    plot.title = element_text(size = 20, face = "bold"), # Optional: Add a title with larger font size
+    plot.subtitle = element_text(size = 18)) # Optional: Add subtitle with a larger font size
+ggsave("250105_long_log2Calp_timediff.pdf", plot = p_Calp_long_timediff, bg = "transparent", width = 10, height = 8)
+
+lmm_calp.null <- lmer(log2_Calp ~ time_from_baseline_mo + age + sex + BMI + apoe4.carriage + Diabetes + Hypertension + (1 | ID), data = elisa_long_df_filt, REML = FALSE)
+summary(lmm_calp.null)
+lmm_calp.model <- lmer(log2_NGAL ~ time_from_baseline_mo + age + sex + BMI + apoe4.carriage + Diabetes + Hypertension + AD_Status + (1 | ID), data = elisa_long_df_filt, REML = FALSE)
+summary(lmm_calp.model)
+anova(lmm_calp.null, lmm_calp.model)
+
+```
+
+Figure 4
+```{r}
+mtg_unif_matrix <- create_pairwise_beta_div_matrix(ps_obj = ps_mtg_long,
+                                                 distance_metric = "unifrac",
+                                                 distance_metric_string = "Unifrac distance",
+                                                 output_name = "m3_MTG_gt10M_stable_noOther_unif")
+mtg_unif_matrix_filt <- mtg_unif_matrix %>%
+  filter(Comparison == "Within participant") 
+
+mtg_unif_matrix_filt$Stool_Date_Collected.x <- as.Date(as.character(mtg_unif_matrix_filt$Stool_Date_Collected.x))
+mtg_unif_matrix_filt$Stool_Date_Collected.y <- as.Date(as.character(mtg_unif_matrix_filt$Stool_Date_Collected.y))
+
+## Only keep pairwse unifrac comparisons from baseline sample
+mtg_unif_matrix_baseline <- mtg_unif_matrix_filt %>%
+   filter(Time_point.x == 1 | Time_point.y == 1)
+# Check which column got the baseline sample. In this case columns y have info 
+## on the baseline sample
+summary(mtg_unif_matrix_baseline$Time_point.y)
+
+## Add other useful columns 
+mtg_unif_matrix_baseline <- mtg_unif_matrix_baseline %>% 
+  group_by(ID.y) %>%
+  arrange(Stool_Date_Collected.y) %>%
+  mutate(baseline_date = min(Stool_Date_Collected.y, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(Time_diff_from_baseline_days = round(abs(as.numeric(difftime(Stool_Date_Collected.x, baseline_date, units = "days"))))) %>%
+  mutate(Time_diff_from_baseline_mo = abs(round(time_length(difftime(Stool_Date_Collected.x, baseline_date),"months"),2))) %>%
+  select(Sample_ID1, Sample_ID2, unifrac, Time_diff_from_baseline_days,Time_diff_from_baseline_mo, ID.x, Time_point.x, BMI.x, AD_Status.x, amyloid_tau_status.x, age.x, sex.x, apoe4_carriage.x, Diabetes.x, Hypertension.x, Days_since_biomarker_assessment.x, ID.y, Time_point.y, BMI.y, AD_Status.y, amyloid_tau_status.y, age.y, sex.y, apoe4_carriage.y, Diabetes.y, Hypertension.y, Days_since_biomarker_assessment.y) %>%
+  dplyr::rename(GM_tax_unif = unifrac)
+
+summary(mtg_unif_matrix_baseline$Time_point.y) 
+
+# Eliminating rows with NAs
+mtg_unif_matrix_baseline_subset <- mtg_unif_matrix_baseline %>% filter(complete.cases(.)) %>%
+  filter(AD_Status.y != "Symptomatic")
+summary(mtg_unif_matrix_baseline_subset$AD_Status.y)
+
+# Filter out any consecutive samples that are less than 6 months apart from each other
+mtg_unif_matrix_baseline_6mo_filt <- mtg_unif_matrix_baseline_subset %>%
+  arrange(ID.y, Time_diff_from_baseline_mo) %>% 
+  group_by(ID.y) %>%
+  filter(
+    # Step 2: Filter out rows where the difference with the previous row is less than 10
+    # Use lag to get the previous Time_diff_from_baseline_mo within each group
+    Time_diff_from_baseline_mo - lag(Time_diff_from_baseline_mo, default = -Inf) > 6
+  ) %>%
+  ungroup() 
+  #filter(Time_diff_from_baseline_mo >= 6)
+
+summary(mtg_unif_matrix_baseline_6mo_filt$AD_Status.y)
+
+## Time frames more or less match between the two groups
+mtg_unif_matrix_baseline_timeframe_hp <- mtg_unif_matrix_baseline_subset %>%
+  group_by(AD_Status.y) %>%
+  summarise(
+    min_timeframe_days = min(Time_diff_from_baseline_days),
+    max_timeframe_days = max(Time_diff_from_baseline_days),
+    min_timeframe_mo = min(Time_diff_from_baseline_mo),
+    max_timeframe_mo = max(Time_diff_from_baseline_mo)
+  )
+
+p_long_unif_timediff_hp <- ggplot(mtg_unif_matrix_baseline_subset, aes(x = Time_diff_from_baseline_mo, y = GM_tax_unif, color = AD_Status.y, group = ID.y)) +
+  geom_point() +  # Add points
+  geom_line(linetype = "dashed") +   # Connect points belonging to the same ID +
+  geom_smooth(aes(group = AD_Status.y), method = "lm", se = TRUE) +  # Add a linear regression line with confidence intervals
+  scale_color_manual(values = custom_colors_hp) +
+  scale_x_continuous(breaks = seq(0, max(mtg_unif_matrix_baseline_hp$Time_diff_from_baseline_mo), by = 6)) +  # Set x-axis breaks at every 6 months
+  labs(x = "Time difference from baseline sample (Months)", 
+       y = "GM Dynamism (UniFrac Dissimilarity)",
+       color = "AD Status") +  # Label the axes and legend
+  theme_minimal() +  # Use a minimal theme for a clean look
+  theme(
+    text = element_text(size = 16),       # Set general font size
+    axis.title = element_text(size = 18), # Axis titles font size
+    axis.text = element_text(size = 14),  # Axis labels font size
+    legend.title = element_text(size = 16), # Legend title font size
+    legend.text = element_text(size = 14),  # Legend labels font size
+    plot.title = element_text(size = 20, face = "bold"), # Optional: Add a title with larger font size
+    plot.subtitle = element_text(size = 18) # Optional: Add subtitle with a larger font size
+  )
+ggsave("260217_MTG_long_unif_timediff_from_baseline_hp.pdf", plot = p_long_unif_timediff_hp,bg = "transparent", width = 10, height = 8)
+
+# Fit mixed-effects model
+options(na.action='na.fail')
+lmm_hp.interaction <- lmer(GM_tax_unif ~  Time_diff_from_baseline_mo + age.y + sex.y + BMI.y + apoe4_carriage.y + Diabetes.y + Hypertension.y + 
+                             Time_diff_from_baseline_mo * AD_Status.y + (1 | ID.y), data = mtg_unif_matrix_baseline_6mo_filt, REML = FALSE)
+summary(lmm_hp.interaction)
+
+lmm_hp.reduced <- lmer(GM_tax_unif ~  age.y + sex.y + BMI.y + apoe4.carriage.y + Diabetes.y + Hypertension.y + 
+                             Time_diff_from_baseline_mo + AD_Status.y + (1 | ID.y), data = mtg_unif_matrix_baseline_6mo_filt, REML = FALSE)
+anova(lmm_hp.reduced, lmm_hp.interaction)
+
+lmm_hp.null <- lmer(GM_tax_unif ~ Time_diff_from_baseline_mo + age.y + sex.y + BMI.y + 
+                 apoe4.carriage.y + Diabetes.y + Hypertension.y + (1 | ID.y), data = mtg_unif_matrix_baseline_6mo_filt, REML = FALSE)
+summary(lmm_hp.null)
+lmm_hp.model <- lmer(GM_tax_unif ~ Time_diff_from_baseline_mo + age.y + sex.y + BMI.y + 
+                 apoe4.carriage.y + Diabetes.y + Hypertension.y + AD_Status.y + (1 | ID.y), data = mtg_unif_matrix_baseline_6mo_filt, REML = FALSE)
+summary(lmm_hp.model)
+lmm_hp_model_summary <- as.data.frame(summary(lmm_hp.model)$coefficients) # The GM of the preclinical individuals is significantly less dynamic on average (B = -0.048, p = 0.022)
+#lmm_hp_model_summary$q.value <- p.adjust(lmm_hp_model_summary$`Pr(>|t|)`, method = "BH")
+write.csv(lmm_hp_model_summary, "250730_lmm_hp_AD_status_model_summary.csv", row.names = T)
+
+anova(lmm_hp.null, lmm_hp.model) #Preclinical status may affect GM stability over time ((χ2(1)=5,34, p=0.018)) 
+write.csv(anova(lmm_hp.null, lmm_hp.model), "250730_MTG_long_hp_unif_dynamism_lmm_anova.csv")
+
+r.squaredGLMM(lmm_hp.model)
+```
+
+
+Extended Data Figure 4
+```{r}
+corr_inflamm_centiloid_df <- ps_mtg_single_tp.hp_meta %>%
+  select(c(Sample_ID, ID, log2_Calp, log2_NGAL, combined.centiloid, AD_Status)) %>%
+  filter(complete.cases(.)) # Eliminating rows with NAs 
+
+ngal_centiloid_corr <- ggplot(corr_inflamm_centiloid_df, aes(x = combined.centiloid, y = log2_NGAL)) +
+  geom_point(size = 2, alpha = 0.7) + 
+  geom_smooth(method = "lm", se = TRUE) + 
+  stat_cor(method = "pearson") + # adjust label position
+  labs(x = "Centiloid", y = "Log2(NGAL)") + 
+  theme_minimal() +
+  theme(
+    title = element_text(size = 16),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    axis.text = element_text(size = 12),
+    legend.position = "none",
+    strip.text = element_text(size = 16, face = "bold"), # bigger and bold facet titles
+    plot.margin = margin(40,10,30,10) # Increase bottom margin to avoid cutoff
+  ) 
+ggsave("Extended_Data_Fig4A_log2NGAL_Centiloid_corr_plot.pdf", plot = ngal_centiloid_corr, bg = "transparent", width = 9, height = 8)
+
+calp_centiloid_corr <- ggplot(corr_inflamm_centiloid_df, aes(x = combined.centiloid, y = log2_Calp)) +
+  geom_point(size = 2, alpha = 0.7) + 
+  geom_smooth(method = "lm", se = TRUE) + 
+  stat_cor(method = "pearson") + # adjust label position
+  labs(x = "Centiloid", y = "Log2(Calprotectin)") + 
+  theme_minimal() +
+  theme(
+    title = element_text(size = 16),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    axis.text = element_text(size = 12),
+    legend.position = "none",
+    strip.text = element_text(size = 16, face = "bold"), # bigger and bold facet titles
+    plot.margin = margin(40,10,30,10) # Increase bottom margin to avoid cutoff
+  ) 
+ggsave("Extended_Data_Fig4B_log2Calp_Centiloid_corr_plot.pdf", plot = calp_centiloid_corr, bg = "transparent", width = 9, height = 8)
+```
+
+
+Figure 5
+```{r}
+##### Determine time difference between closest and last time point stools 
+closest_h_time <- ps_mtg_closest_h_meta %>% select(Sample_ID, ID, Stool_Date_Collected)
+last_h_time <- ps_mtg_last_h_meta %>% select(Sample_ID, ID, Stool_Date_Collected)
+
+h_sample_pairs <- merge(closest_h_time, last_h_time, by = "ID")
+h_sample_pairs$Stool_Date_Collected.x <- as.Date(as.character(h_sample_pairs$Stool_Date_Collected.x))
+h_sample_pairs$Stool_Date_Collected.y <- as.Date(as.character(h_sample_pairs$Stool_Date_Collected.y))
+
+h_sample_pairs <- h_sample_pairs %>% mutate(Time_diff_mo = abs(round(time_length(difftime(Stool_Date_Collected.y, Stool_Date_Collected.x),"months"),2)),
+                                            AD_Status = "Healthy")
+
+closest_p_time <- ps_mtg_closest_p_meta %>% select(Sample_ID, ID, Stool_Date_Collected)
+last_p_time <- ps_mtg_last_p_meta %>% select(Sample_ID, ID, Stool_Date_Collected)
+p_sample_pairs <- merge(closest_p_time, last_p_time, by = "ID")
+p_sample_pairs$Stool_Date_Collected.x <- as.Date(as.character(p_sample_pairs$Stool_Date_Collected.x))
+p_sample_pairs$Stool_Date_Collected.y <- as.Date(as.character(p_sample_pairs$Stool_Date_Collected.y))
+p_sample_pairs <- p_sample_pairs %>% mutate(Time_diff_mo = abs(round(time_length(difftime(Stool_Date_Collected.y, Stool_Date_Collected.x),"months"),2)),
+                                            AD_Status = "Preclinical")
+
+hp_sample_pairs <- rbind(h_sample_pairs, p_sample_pairs)
+
+ggplot(hp_sample_pairs, aes(x = Time_diff_mo)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "skyblue", color = "black") +
+  geom_density(color = "red", size = 1) +
+  labs(title = "Histogram with Density Curve for HP samples",
+       x = "Time difference between 'closest' sample and last follow-up sample (months)",
+       y = "Density")
+shapiro.test(hp_sample_pairs$Time_diff_mo)
+
+hp_sample_pairs_summary <- hp_sample_pairs %>% 
+  group_by(AD_Status) %>%
+  summarise(Q1 = quantile(Time_diff_mo, 0.25, na.rm = TRUE),
+                                                       Median = median(Time_diff_mo, na.rm = TRUE),
+                                                       Q3 = quantile(Time_diff_mo, 0.75, na.rm = TRUE)) %>%
+  ungroup()
+
+hp_sample_pairs_summary2 <- hp_sample_pairs %>% 
+  summarise(Q1 = quantile(Time_diff_mo, 0.25, na.rm = TRUE),
+                                                       Median = median(Time_diff_mo, na.rm = TRUE),
+                                                       Q3 = quantile(Time_diff_mo, 0.75, na.rm = TRUE)) 
+
+wilcox.test(Time_diff_mo ~ AD_Status, data = hp_sample_pairs)
+
+
+######## Subsampling healthy closest and preclinical closest samples to individuals at the last time point ########
+ps_mtg_closest_h_matched <- ps_mtg_closest_h %>% subset_samples(ID %in% ps_mtg_last_h_meta$ID) # 64 samples
+ps_mtg_last_h
+ps_mtg_closest_p_matched <- ps_mtg_closest_p %>% subset_samples(ID %in% ps_mtg_last_p_meta$ID) # 25 samples
+ps_mtg_last_p
+
+tso_mtg_h_last = mia::makeTreeSummarizedExperimentFromPhyloseq(ps_mtg_last_h)  # 64 samples
+tso_mtg_p_last = mia::makeTreeSummarizedExperimentFromPhyloseq(ps_mtg_last_p) # 25 samples
+tso_mtg_h_closest_matched = mia::makeTreeSummarizedExperimentFromPhyloseq(ps_mtg_closest_h_matched) # 137 samples
+tso_mtg_p_closest_matched = mia::makeTreeSummarizedExperimentFromPhyloseq(ps_mtg_closest_p_matched) # 61 samples
+
+# Run SECOM
+set.seed(123)
+secom_h_closest_matched = secom_linear(data = list(tso_mtg_h_closest_matched), assay_name = "counts",
+                               tax_level = NULL, pseudo = 0, 
+                               prv_cut = 0, lib_cut = 0, corr_cut = 0.6, 
+                               wins_quant = c(0.05, 0.95), method = "pearson", 
+                               soft = FALSE, thresh_len = 20, n_cv = 10, 
+                               thresh_hard = 0.3, max_p = 0.05, n_cl = 2)
+secom_p_closest_matched = secom_linear(data = list(tso_mtg_p_closest_matched), assay_name = "counts",
+                               tax_level = NULL, pseudo = 0, 
+                               prv_cut = 0, lib_cut = 0, corr_cut = 0.6, 
+                               wins_quant = c(0.05, 0.95), method = "pearson", 
+                               soft = FALSE, thresh_len = 20, n_cv = 10, 
+                               thresh_hard = 0.3, max_p = 0.05, n_cl = 2)
+
+secom_h_last = secom_linear(data = list(tso_mtg_h_last), assay_name = "counts",
+                            tax_level = NULL, pseudo = 0, 
+                            prv_cut = 0, lib_cut = 0, corr_cut = 0.6, 
+                            wins_quant = c(0.05, 0.95), method = "pearson", 
+                            soft = FALSE, thresh_len = 20, n_cv = 10, 
+                            thresh_hard = 0.3, max_p = 0.05, n_cl = 2)
+
+secom_p_last = secom_linear(data = list(tso_mtg_p_last), assay_name = "counts",
+                            tax_level = NULL, pseudo = 0, 
+                            prv_cut = 0, lib_cut = 0, corr_cut = 0.6, 
+                            wins_quant = c(0.05, 0.95), method = "pearson", 
+                            soft = FALSE, thresh_len = 20, n_cv = 10, 
+                            thresh_hard = 0.3, max_p = 0.05, n_cl = 2)
+
+set.seed(123)
+P_closest_matched_res_linear_network <- calc_secom_network_properties(secom_p_closest_matched, overlap_threshold = 10, cor_threshold = 0.6) 
+H_closest_matched_res_linear_network <- calc_secom_network_properties(secom_h_closest_matched, overlap_threshold = 10, cor_threshold = 0.6)
+
+P_last_res_linear_network <- calc_secom_network_properties(secom_p_last, overlap_threshold = 10, cor_threshold = 0.5)
+H_last_res_linear_network <- calc_secom_network_properties(secom_h_last, overlap_threshold = 10, cor_threshold = 0.5) 
+
+h_closest_matched_node <- H_closest_matched_res_linear_network$nodes
+h_closest_matched_node <- h_closest_matched_node %>% 
+  mutate(id=gsub(".*s__", "", id),
+         Label=gsub(".*s__", "", Label))
+p_closest_matched_node <- P_closest_matched_res_linear_network$nodes
+p_closest_matched_node <- p_closest_matched_node %>% 
+  mutate(id=gsub(".*s__", "", id),
+         Label=gsub(".*s__", "", Label))
+
+h_last_node <- H_last_res_linear_network$nodes
+h_last_node <- h_last_node %>% 
+  mutate(id=gsub(".*s__", "", id),
+         Label=gsub(".*s__", "", Label))
+p_last_node <- P_last_res_linear_network$nodes
+p_last_node <- p_last_node %>% 
+  mutate(id=gsub(".*s__", "", id),
+         Label=gsub(".*s__", "", Label))
+
+
+####### Compare hubbiness metrics between networks: Cross-sectional (Fig D)
+hub_metrics_h_closest_matched <- h_closest_matched_node %>%
+  mutate(Group = "Healthy")
+hub_metrics_p_closest_matched <- p_closest_matched_node %>%
+  mutate(Group = "Preclinical")
+hub_metrics_h_last <- h_last_node %>%
+  mutate(Group = "Healthy_follow-up")
+hub_metrics_p_last <- p_last_node %>%
+  mutate(Group = "Preclinical_follow-up")
+hub_metrics_long <- rbind(hub_metrics_h_closest_matched, hub_metrics_p_closest_matched, hub_metrics_h_last, hub_metrics_p_last)
+hub_metrics_long$Group <- as.factor(hub_metrics_long$Group)
+hub_metrics_long$Group <- factor(hub_metrics_long$Group, levels=c("Healthy", "Preclinical", "Healthy_follow-up", "Preclinical_follow-up"))
+
+bp_long_matched_degree <- ggplot(hub_metrics_long, aes(x = Group, y = degree, fill = Group)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp_long) +  # Change the palette to suit your preferences
+  scale_color_manual(values = custom_colors_hp_long) +
+  labs(x = "AD Status",
+       y = "Degree") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy", "Preclinical"),
+                                        c("Healthy_follow-up", "Preclinical_follow-up"),
+                                        c("Healthy", "Healthy_follow-up"),
+                                        c("Preclinical", "Preclinical_follow-up")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.1, # Helps prevent label overlap
+                     size = 6, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("Fig5C_degree_matched.pdf", plot = bp_long_matched_degree, bg = "transparent", width = 10, height = 8)
+
+bp_long_matched_betweenness <- ggplot(hub_metrics_long, aes(x = Group, y = betweenness, fill = Group)) +
+  geom_boxplot(outlier.shape = NA) +  
+  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp_long) +  # Change the palette to suit your preferences
+  scale_color_manual(values = custom_colors_hp_long) +
+  labs(x = "AD Status",
+       y = "Betweenness Centrality",
+       fill = "AD Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 50, hjust = 1, size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy", "Preclinical"),
+                                        c("Healthy_follow-up", "Preclinical_follow-up"),
+                                        c("Healthy", "Healthy_follow-up"),
+                                        c("Preclinical", "Preclinical_follow-up")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.1, # Helps prevent label overlap
+                     size = 5, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("Extended_Fig_5A_matched_betweenness.pdf", plot = bp_long_matched_betweenness, bg = "transparent", width = 10, height = 8)
+
+bp_long_matched_closeness <- ggplot(hub_metrics_long, aes(x = Group, y = closeness, fill = Group)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp_long) +  # Change the palette to suit your preferences
+  scale_color_manual(values = custom_colors_hp_long) +
+  labs(x = "AD Status",
+       y = "Closeness Centrality",
+       fill = "AD Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")
+  ) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy", "Preclinical"),
+                                        c("Healthy_follow-up", "Preclinical_follow-up"),
+                                        c("Healthy", "Healthy_follow-up"),
+                                        c("Preclinical", "Preclinical_follow-up")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.1, # Helps prevent label overlap
+                     size = 6, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("Fig5C_closeness_matched.pdf", plot = bp_long_matched_closeness, bg = "transparent", width = 10, height = 8)
+
+bp_long_matched_coreness <- ggplot(hub_metrics_long, aes(x = Group, y = Coreness, fill = Group)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp_long) +  
+  scale_color_manual(values = custom_colors_hp_long) +
+  labs(x = "AD Status",
+       y = "Coreness",
+       fill = "AD Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")
+  ) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy", "Preclinical"),
+                                        c("Healthy_follow-up", "Preclinical_follow-up"),
+                                        c("Healthy", "Healthy_follow-up"),
+                                        c("Preclinical", "Preclinical_follow-up")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.1, # Helps prevent label overlap
+                     size = 6, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("Fig5C_coreness_matched.pdf", plot = bp_long_matched_coreness, bg = "transparent", width = 10, height = 8)
+
+bp_long_matched_efficiency <- ggplot(hub_metrics_long, aes(x = Group, y = local_efficiency, fill = Group)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp_long) +  # Change the palette to suit your preferences
+  scale_color_manual(values = custom_colors_hp_long) +
+  labs(x = "AD Status",
+       y = "Local Efficiency",
+       fill = "AD Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")
+  ) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy", "Preclinical"),
+                                        c("Healthy_follow-up", "Preclinical_follow-up"),
+                                        c("Healthy", "Healthy_follow-up"),
+                                        c("Preclinical", "Preclinical_follow-up")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.1, # Helps prevent label overlap
+                     size = 6, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("Fig5C_local_effiency_matched.pdf", plot = bp_long_matched_efficiency, bg = "transparent", width = 10, height = 8)
+
+combined_plot1 <- bp_long_matched_degree / bp_long_matched_closeness 
+combined_plot2 <- bp_long_matched_efficiency / bp_long_matched_coreness
+combined_plot_hor <- combined_plot1 | combined_plot2
+ggsave("Fig_5C.pdf", plot = combined_plot_hor, bg = "transparent", width = 18, height = 10)
+
+
+##################### Only at follow-up figures ##########################
+hub_metrics_last <- rbind(hub_metrics_h_last, hub_metrics_p_last)
+hub_metrics_last$Group <- as.factor(hub_metrics_last$Group)
+hub_metrics_last$Group <- factor(hub_metrics_last$Group, levels=c("Healthy_follow-up", "Preclinical_follow-up"))
+
+bp_last_degree <- ggplot(hub_metrics_last, aes(x = Group, y = degree, fill = Group)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp_long) +  # Change the palette to suit your preferences
+  scale_color_manual(values = custom_colors_hp_long) +
+  labs(x = "AD Status",
+       y = "Degree") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy_follow-up", "Preclinical_follow-up")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.1, # Helps prevent label overlap
+                     size = 6, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("Fig5C_degree_last_only.pdf", plot = bp_last_matched_degree, bg = "transparent", width = 10, height = 8)
+
+bp_last_betweenness <- ggplot(hub_metrics_last, aes(x = Group, y = betweenness, fill = Group)) +
+  geom_boxplot(outlier.shape = NA) +  
+  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp_long) +  # Change the palette to suit your preferences
+  scale_color_manual(values = custom_colors_hp_long) +
+  labs(x = "AD Status",
+       y = "Betweenness Centrality",
+       fill = "AD Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 50, hjust = 1, size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy_follow-up", "Preclinical_follow-up")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.1, # Helps prevent label overlap
+                     size = 5, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("Extended_Fig_5A_betweenness_last_only.pdf", plot = bp_long_matched_betweenness, bg = "transparent", width = 10, height = 8)
+
+bp_last_closeness <- ggplot(hub_metrics_last, aes(x = Group, y = closeness, fill = Group)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp_long) +  # Change the palette to suit your preferences
+  scale_color_manual(values = custom_colors_hp_long) +
+  labs(x = "AD Status",
+       y = "Closeness Centrality",
+       fill = "AD Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")
+  ) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy_follow-up", "Preclinical_follow-up")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.1, # Helps prevent label overlap
+                     size = 6, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("Fig5C_closeness_last_only.pdf", plot = bp_last_closeness, bg = "transparent", width = 10, height = 8)
+
+bp_last_coreness <- ggplot(hub_metrics_last, aes(x = Group, y = Coreness, fill = Group)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp_long) +  
+  scale_color_manual(values = custom_colors_hp_long) +
+  labs(x = "AD Status",
+       y = "Coreness",
+       fill = "AD Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 18),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")
+  ) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy_follow-up", "Preclinical_follow-up")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.1, # Helps prevent label overlap
+                     size = 6, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("Fig5C_coreness_matched.pdf", plot = bp_last_coreness, bg = "transparent", width = 10, height = 8)
+
+bp_last_efficiency <- ggplot(hub_metrics_last, aes(x = Group, y = local_efficiency, fill = Group)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp_long) +  # Change the palette to suit your preferences
+  scale_color_manual(values = custom_colors_hp_long) +
+  labs(x = "AD Status",
+       y = "Local Efficiency",
+       fill = "AD Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")
+  ) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy_follow-up", "Preclinical_follow-up")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.1, # Helps prevent label overlap
+                     size = 6, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("Fig5C_local_effiency_last_only.pdf", plot = bp_last_efficiency, bg = "transparent", width = 10, height = 8)
+
+combined_plot1 <- bp_last_degree / bp_last_closeness 
+combined_plot2 <- bp_last_efficiency / bp_last_coreness
+combined_plot_hor <- combined_plot1 | combined_plot2
+ggsave("Fig_5C_last_only.pdf", plot = combined_plot_hor, bg = "transparent", width = 18, height = 10)
+
+```
+
+Fig 5: Guilds
+```{r}
+## Hard coding guild members
+guild_members <- c("Roseburia_sp_CAG_471", "Roseburia_hominis", "Alistipes_shahii", "Bacteroides_cellulosilyticus")
+guild_members_long <- c('k__Bacteria.p__Firmicutes.c__Clostridia.o__Clostridiales.f__Lachnospiraceae.g__Roseburia.s__Roseburia_sp_CAG_471',	'k__Bacteria.p__Firmicutes.c__Clostridia.o__Clostridiales.f__Lachnospiraceae.g__Roseburia.s__Roseburia_hominis',	'k__Bacteria.p__Bacteroidetes.c__Bacteroidia.o__Bacteroidales.f__Rikenellaceae.g__Alistipes.s__Alistipes_shahii',	'k__Bacteria.p__Bacteroidetes.c__Bacteroidia.o__Bacteroidales.f__Bacteroidaceae.g__Bacteroides.s__Bacteroides_cellulosilyticus')
+guild_members_long <- gsub("(__[A-Za-z0-9_]+)\\.", "\\1|", guild_members_long)
+
+for (species_name in guild_members_long) {
+  if (species_name %in% taxa_names(ps_mtg_last_tp_hp)) {
+    species_abundance <- as.vector(otu_table(ps_mtg_last_tp_hp)[species_name, ])  # Switch to [species, ]
+    sample_data(ps_mtg_last_tp_hp)[[paste0(species_name, "_abundance")]] <- species_abundance
+  } else {
+    warning(paste("Species", species_name, "not found in phyloseq object"))
+  }
+}
+
+ps_mtg_last_hp_meta <- data.frame(phyloseq::sample_data(ps_mtg_last_tp_hp))
+
+ps_mtg_last_hp_meta$guild_abundance <- rowSums(ps_mtg_last_hp_meta[, grepl("s__", names(ps_mtg_last_hp_meta))], na.rm = TRUE)
+#write.csv(guild_metadata, paste0(output_path, "_guild_metadata.csv"), row.names = FALSE)
+
+ps_mtg_last_hp_meta <- ps_mtg_last_hp_meta %>% mutate(guild_abundance_adj = guild_abundance + 1e-6)
+
+custom_colors_hp_last <- c("Healthy" = "#a7d9c1", "Preclinical" = "#e9d8b5")
+
+last_hp_abundance_plot <- ggplot(ps_mtg_last_hp_meta, aes(x = AD_Status, y = guild_abundance_adj, color = AD_Status)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.2, height = 0, alpha = 0.8, size = 1) +
+  stat_compare_means(method = "wilcox.test", label = "p.format") +
+  scale_color_manual(values = custom_colors_hp_last) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 16),       # Set general font size
+    axis.title = element_text(size = 18), # Axis titles font size
+    axis.text = element_text(size = 14),  # Axis labels font size
+    legend.position = "none") +
+  scale_y_log10() +
+  labs(
+    y = "Guild Abundance",
+    x = "AD Status")
+ggsave("251029_MTG_last_tp_guild_abund_comparison_hp_no_legends.pdf", plot = last_hp_abundance_plot,bg = "transparent", width = 8, height = 6)
+
+cent_cor_last_hp <- ggplot(ps_mtg_last_hp_meta, aes(x = guild_abundance , y = combined.centiloid, color = AD_Status)) +
+  geom_point(size = 1, alpha = 0.8) +
+  geom_smooth(method = "lm", se = TRUE, alpha = 0.2) +
+  #stat_cor(method = "spearman") +
+  scale_color_manual(values = custom_colors_hp_last) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 16),       # Set general font size
+    axis.title = element_text(size = 18), # Axis titles font size
+    axis.text = element_text(size = 14),  # Axis labels font size
+    axis.text.x = element_text(angle = 40, vjust = 0.6),
+    legend.position = "none",
+    plot.title = element_text(size = 16) # Optional: Add subtitle with a larger font size
+  ) +
+  labs(
+    y = "PET Amyloid",
+    x = "Guild Abundance (%)") 
+ggsave("251028_MTG_single_tp_guild_centiloid_hp_test_subset.pdf", plot = cent_cor_last_hp,bg = "transparent", width = 8, height = 6)
+
+## Test whether there is an AD_Status effect on the relationship between centiloid and guild abundance in the test dataset
+lm_last_guild_interaction <- lm(combined.centiloid ~ guild_abundance * AD_Status, data = ps_mtg_last_hp_meta)
+lm_last_guild_interaction_summary <- tidy(lm_last_guild_interaction)
+
+lm0_last_guild <- lm(combined.centiloid ~ guild_abundance + AD_Status, data = ps_mtg_last_hp_meta)
+
+last_guild_anova_summary <- tidy(anova(lm0_last_guild, lm_last_guild_interaction))
+
+write.csv(lm_last_guild_interaction_summary, "251029_lm_guild_centiloid_ad_status_interaction_hp_last_summary.csv", row.names = FALSE)
+write.csv(last_guild_anova_summary, "251029_lm_guild_centiloid_ad_status_interaction_hp_last_anova.csv", row.names = FALSE)
+
+```
+
+### Comparing LPS levels to test leaky gut hypothesis ####
+```{r}
+ps_mtg_single_tp.hp_meta
+
+shapiro.test(ps_mtg_single_tp.hp_meta$LPS_EIA_units)
+ks.test(ps_mtg_single_tp.hp_meta$LPS_EIA_units, "pnorm",
+        mean = mean(ps_mtg_single_tp.hp_meta$LPS_EIA_units, na.rm = TRUE),
+        sd = sd(ps_mtg_single_tp.hp_meta$LPS_EIA_units, na.rm = TRUE))
+
+shapiro.test(ps_mtg_single_tp.hp_meta$LBP_ug_mL)
+
+# Log transform
+ps_mtg_single_tp.hp_meta$log_LPS <- log(ps_mtg_single_tp.hp_meta$LPS_EIA_units)
+ps_mtg_single_tp.hp_meta$log_LBP <- log(ps_mtg_single_tp.hp_meta$LBP_ug_mL)
+
+# Normally distributed now
+shapiro.test(ps_mtg_single_tp.hp_meta$log_LPS)
+shapiro.test(ps_mtg_single_tp.hp_meta$log_LBP)
+
+## Visualize before and after log transformation
+pdf("260303_LPS_normality_plots.pdf")
+par(mfrow = c(2, 2))  # 2x2 plot grid
+
+# Original data
+hist(ps_mtg_single_tp.hp_meta$LPS_EIA_units, main = "Original", xlab = "LPS (EIA units)")
+qqnorm(ps_mtg_single_tp.hp_meta$LPS_EIA_units, main = "Q-Q Plot: Original")
+qqline(ps_mtg_single_tp.hp_meta$LPS_EIA_units, col = "red")
+
+# Log-transformed data
+hist(ps_mtg_single_tp.hp_meta$log_LPS, main = "Log-Transformed", xlab = "log(LPS)")
+qqnorm(ps_mtg_single_tp.hp_meta$log_LPS, main = "Q-Q Plot: Log-Transformed")
+qqline(ps_mtg_single_tp.hp_meta$log_LPS, col = "red")
+dev.off()
+
+
+### Compare log LPS between healthy and preclinical groups #####
+df_plot <- ps_mtg_single_tp.hp_meta %>%
+  select(c(Sample_ID, ID, log_LPS, age, sex, BMI, apoe4.carriage, Diabetes, Hypertension, AD_Status, amyloid_tau_status)) %>%
+  filter(complete.cases(.)) # Eliminating rows with NAs 
+table(df_plot$AD_Status)
+table(df_plot$amyloid_tau_status)
+
+######## LPS is significantly different ########
+bp_logLPS <- ggplot(df_plot, aes(x = AD_Status, y = log_LPS, fill = AD_Status)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp) +  # Change the palette to suit your preferences
+  labs(x = "AD Status",
+       y = "log(LPS)",
+       fill = "AD Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")
+  ) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy", "Preclinical")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.1, # Helps prevent label overlap
+                     size = 6, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("260303_HP_single_tp_LPS_wilcox.pdf", plot = bp_logLPS, bg = "transparent", width = 10, height = 8)
+
+#### LPS AT Separation #########
+bp_logLPS_AT <- ggplot(df_plot, aes(x = amyloid_tau_status, y = log_LPS, fill = AD_Status)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp) +  # Change the palette to suit your preferences
+  labs(x = "AD Status",
+       y = "log(LPS)",
+       fill = "AD Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")
+  ) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy", "Preclinical")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.1, # Helps prevent label overlap
+                     size = 6, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("260303_HP_single_tp_LPS_wilcox.pdf", plot = bp_logLPS, bg = "transparent", width = 10, height = 8)
+
+df_plot_lbp <- ps_mtg_single_tp.hp_meta %>%
+  select(c(Sample_ID, ID, log_LBP, age, sex, BMI, apoe4.carriage, Diabetes, Hypertension, AD_Status)) %>%
+  filter(complete.cases(.)) # Eliminating rows with NAs 
+table(df_plot_lbp$AD_Status)
+
+####### LBP is not significantly different #######
+bp_logLBP <- ggplot(df_plot_lbp, aes(x = AD_Status, y = log_LBP, fill = AD_Status)) +
+  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
+  geom_jitter(shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
+  scale_fill_manual(values = custom_colors_hp) +  # Change the palette to suit your preferences
+  labs(x = "AD Status",
+       y = "log(LBP)",
+       fill = "AD Status") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title.x = element_text(size = 16),
+        axis.title.y = element_text(size = 18),
+        legend.position = "none",
+        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
+        axis.line = element_line(color = "black", linewidth = 0.6),
+        axis.line.y = element_line(color = "black"),
+        axis.line.x = element_line(color = "black")
+  ) +  # Increase bottom margin
+  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
+  stat_compare_means(comparisons = list(c("Healthy", "Preclinical")),
+                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
+                     step.increase = 0.1, # Helps prevent label overlap
+                     size = 6, #adjusted p-value label size
+                     show.legend = FALSE) 
+ggsave("260303_HP_single_tp_LBP_wilcox.pdf", plot = bp_logLBP, bg = "transparent", width = 10, height = 8)
+
+##### Emmeans #######
+df_plot <- ps_mtg_single_tp.hp_meta %>%
+  select(c(Sample_ID, ID, log_LPS, age, sex, BMI, apoe4.carriage, Diabetes, Hypertension, AD_Status)) %>%
+  filter(complete.cases(.)) # Eliminating rows with NAs 
+
+options(na.action='na.fail')
+lps.model <- lm(log_LPS ~ age + sex + BMI + apoe4.carriage + Diabetes + Hypertension + AD_Status, data = df_plot)
+summary(lps.model)
+
+#### Adjusted EMMs --> not significant
+lps_emm <- pairs(emmeans(lps.model, ~ AD_Status), adjust = "none")
+summary(lps_emm)
+
+
+```
+
