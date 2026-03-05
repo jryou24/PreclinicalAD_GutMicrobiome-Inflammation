@@ -67,6 +67,7 @@ source("Functions/Statistical_tests.R")
 source("Functions/secom.R")
 source("Functions/SECOM_functions.R")
 source("Functions/rf_boruta.R")
+source("Functions/customtab.R")
 cur.date <- format(Sys.Date(), "%y%m%d")
 output_path <- (paste0("outputs/", cur.date, "/", cur.date))
 output_path2 <- (paste0("outputs/", cur.date, "/"))
@@ -107,7 +108,7 @@ ps_MTG <- make_phyloseq_object(metaphlan_path,
                                  compute_mean=FALSE) 
 ```
 
-Create Table 1 (need revision)
+Create Table 1 
 ```{r}
 library(kableExtra)
 library("anytime") 
