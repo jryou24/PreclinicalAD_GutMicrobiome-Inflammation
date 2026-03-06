@@ -514,7 +514,7 @@ p_closest_node <- p_closest_node %>%
     )
   ) %>%
   ungroup() %>% select(-parts)
-write.csv(h_closest_node, "260306_preclinical_closest_nodes.csv", row.names = F)
+write.csv(p_closest_node, "260306_preclinical_closest_nodes.csv", row.names = F)
 
 ####### Compare hubbiness metrics between networks: Cross-sectional (Fig D)
 hub_metrics_h_closest <- h_closest_node %>% mutate(Group = "Healthy")
