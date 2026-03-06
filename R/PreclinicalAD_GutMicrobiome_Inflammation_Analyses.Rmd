@@ -500,7 +500,7 @@ h_closest_node <- h_closest_node %>%
     )
   ) %>%
   ungroup() %>% select(-parts)
-write.csv(h_closest_node, "260306_healthy_closest_nodes.csv", row.names = F)
+write.csv(h_closest_node, "260306_healthy_closest_nodes.csv", row.names = F) 
 
 p_closest_node <- p_closest_node %>%
   rowwise() %>%
