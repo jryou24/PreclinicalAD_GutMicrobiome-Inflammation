@@ -73,7 +73,7 @@ output_path <- (paste0("outputs/", cur.date, "/", cur.date))
 output_path2 <- (paste0("outputs/", cur.date, "/"))
 
 
-cat_var <- c('Sample_ID','ID','Time_point','Sex','Race',"CDR",'AD_Status', 'Amyloid_positivity', 'Tau_positivity','Tracer_used_for_classification','Tau_marker','amyloid_tau_status','Tracer.mrfree','Tracer.fsuvr','Tracer.av45','Tracer.tau','apoe_genotype','apoe4_carriage','Diabetes_binary',	'Hypertension_binary','Diabetes',	'Hypertension')
+cat_var <- c('Sample_ID','ID','Time_point','Sample_time','Sex','Race',"CDR",'AD_Status', 'Amyloid_positivity', 'Tau_positivity','Tracer_used_for_classification','Tau_marker','amyloid_tau_status','Tracer.mrfree','Tracer.fsuvr','Tracer.av45','Tracer.tau','apoe_genotype','apoe4_carriage','Diabetes_binary',	'Hypertension_binary','Diabetes',	'Hypertension')
 
 
 num_var <- c("Years_Education","Age","Days_since_CDR",'Days_since_biomarker_assessment',"combined.centiloid","MRFreePET_Centiloid","Days_sinceMrFreePETpib","pib_fsuvr_rsf_tot_cortmean","Centiloid_PiB_fSUVR_rsf_TOT_CORT","Days_sincePETpib","av45_fsuvr_rsf_tot_cortmean","Centiloid_AV45_fSUVR_rsf_TOT_COR","Days_sincePETav45","LUMIPULSE_CSF_AB42","LUMIPULSE_CSF_AB40","LUMIPULSE_CSF_tTau","LUMIPULSE_CSF_pTau","CSF_ab42_ab40_ratio","Days_sinceCSF","Tauopathy","Days_sincePETtau","mr_vol_tot_wmhypointensities","LOAD_CorticalSignature_Thickness","mr_vol_r_hippocampus","mr_vol_l_hippocampus","mr_vol_tot_intracranial","hippocampus_vol_div_icv",	"Days_sinceMRI","NGAL_ug_ml","Calp_ug_ml",	"log2_NGAL","log2_Calp","WEIGHT","HEIGHT","BMI","Calories_kcal",	'Calories_from_fat_kcal',	'Calories_from_SatFat_kcal',	'Protein_g',	'Carbohydrates_g',	'Total_dietary_fiber_g',	'Total_soluble_fiber_g',	'Dietary_fiber_US_2016_g',	'Soluble_fiber_US_2016',	'Total_sugars_g',	'Added_sugar_g','Monosaccharides_g')
@@ -107,15 +107,17 @@ ps_MTG <- make_phyloseq_object(metaphlan_path,
                                  abund_threshold = 0.1, 
                                  compute_mean=FALSE) 
 
-## Create cross-sectional dataset by subsetting to samples from each participant that are closest to their PET imaging or CSF assessment date 
-all_samples_closest_biomarker_df <- subset_sample_closest_to_biomarker_measure(ps_MTG)
-
-samples_closest_to_biomarker <- as.vector(all_samples_closest_biomarker_df$Sample_ID)
-
 # Subset phyloseq object to the samples closest to the AD biomarker measure 
-## N=234 samples
-ps_mtg_single_tp <- phyloseq::subset_samples(ps_MTG, phyloseq::sample_names(ps_MTG) %in% samples_closest_to_biomarker)
+## N=198
+ps_mtg_single_tp <- phyloseq::subset_samples(ps_MTG, Sample_time == "closest")
 ps_mtg_single_tp_meta <- data.frame(phyloseq::sample_data(ps_mtg_single_tp))
+
+
+### Create follow-up dataset by subsetting to last samples from each participant
+## Create phyloseq object for last samples (N = 89)
+ps_mtg_last_tp_hp <- ps_MTG %>% subset_samples(Sample_time == "last follow-up")
+ps_mtg_last_hp_meta <- data.frame(phyloseq::sample_data(ps_mtg_last_tp_hp))
+
 ```
 
 Create Table 1 
@@ -180,18 +182,17 @@ pr_section = prop_section(page_size = page_size(orient = "landscape"), type = "c
 Figure 1
 ```{r}
 # PCoA and permanova using single timepoint samples from healthy and preclinical samples closest to biomarker assessment date 
-mtg_single_tp_hp_meta <- data.frame(phyloseq::sample_data(ps_mtg_single_tp.hp))
-ps.ordination <- phyloseq::ordinate(ps_mtg_single_tp.hp, method='PCoA', distance='unifrac')
+mtg_single_tp_hp_meta <- data.frame(phyloseq::sample_data(ps_mtg_single_tp))
+ps.ordination <- phyloseq::ordinate(ps_mtg_single_tp, method='PCoA', distance='unifrac')
 
 coordinates <- data.frame(ps.ordination$vectors)
 
 df <- data.frame(Coord1 = coordinates$Axis.1,
                  Coord2 = coordinates$Axis.2,
-                 Age = mtg_single_tp_hp_meta[, "age"],
-                 Sex = mtg_single_tp_hp_meta[, "sex"],
-                 Race = mtg_single_tp_hp_meta[, "race"],
+                 Age = mtg_single_tp_hp_meta[, "Age"],
+                 Sex = mtg_single_tp_hp_meta[, "Sex"],
                  BMI = mtg_single_tp_hp_meta[, "BMI"],
-                 Copies_of_APOE4_allele = mtg_single_tp_hp_meta[, "apoe4.carriage"],
+                 Copies_of_APOE4_allele = mtg_single_tp_hp_meta[, "apoe4_carriage"],
                  Diabetes = mtg_single_tp_hp_meta[, "Diabetes"],
                  Hypertension = mtg_single_tp_hp_meta[, "Hypertension"],
                  Days_since_biomarker_assessment = mtg_single_tp_hp_meta[, "Days_since_biomarker_assessment"],
@@ -203,7 +204,7 @@ axis1.model <- lm(Coord1 ~ Age + Sex + BMI + Copies_of_APOE4_allele + Diabetes +
 axis1_summary <- tidy(axis1.model)
 write.csv(axis1_summary, "251124_PCoA1_hp_LM_results.csv", row.names = F)
 
-# Type II ANOVA to assess the effect of AD_Status on PCoA1 scores while adjusting for covariates
+# Type III ANOVA to assess the effect of AD_Status on PCoA1 scores while adjusting for covariates
 ## The effect of AD_Status was marginally significant (F=4.11, p=0.044), indicating that amyloid positivity explained a significant portion of the variation in taxonomic composition along PCoA axis 1. 
 axis1_result <- car::Anova(axis1.model, type = 3) 
 write.csv(axis1_result, "260219_PCoA1_hp_typeIII_ANOVA_results.csv", row.names = T)
@@ -218,7 +219,7 @@ axis2_result <- car::Anova(axis2.model, type = 3)
 write.csv(axis2_result, "250219_PCoA2_hp_typeIII_ANOVA_results.csv", row.names = T)
 
 
-ordination.plot <- phyloseq::plot_ordination(ps_mtg_single_tp.hp, ps.ordination,
+ordination.plot <- phyloseq::plot_ordination(ps_mtg_single_tp, ps.ordination,
                                              type="samples", color="AD_Status") +
   geom_point(size=3, shape=19) +
   stat_ellipse() +
@@ -243,12 +244,12 @@ ordination.plot <- ggMarginal(ordination.plot, type = 'boxplot', groupFill = TRU
 ggsave("260213_Fig1A.pdf", plot = ordination.plot, bg = "transparent", width = 9, height = 6)
 
 # Add the Unifrac PCoA 1 and 2 axes to the phyloseq object metadata
-sample_data(ps_mtg_single_tp.hp)$Tax.PCoA1 <- ps.ordination$vectors[,1]
-sample_data(ps_mtg_single_tp.hp)$Tax.PCoA2 <- ps.ordination$vectors[,2]
+sample_data(ps_mtg_single_tp)$Tax.PCoA1 <- ps.ordination$vectors[,1]
+sample_data(ps_mtg_single_tp)$Tax.PCoA2 <- ps.ordination$vectors[,2]
 
 # PERMANOVA with all significantly different variables based on Table 1
 ## N = 197 (drops 1 sample without APOE data)
-perm_mtg_single_tp_hp <- permanova_wrapper(ps_mtg_single_tp.hp, values=c("Healthy","Preclinical"), var = "AD_Status", adonis_values = c("age","sex","BMI","apoe4.carriage","Diabetes","Hypertension","AD_Status"), ss_method = "margin") #p-value = 0.038
+perm_mtg_single_tp_hp <- permanova_wrapper(ps_mtg_single_tp, values=c("Healthy","Preclinical"), var = "AD_Status", adonis_values = c("Age","Sex","BMI","apoe4_carriage","Diabetes","Hypertension","AD_Status"), ss_method = "margin") #p-value = 0.038
 write.csv(perm_mtg_single_tp_hp@permanova, "260303_Fig1B.csv")
 
 perm_df <- as.data.frame(perm_mtg_single_tp_hp@permanova)
@@ -403,21 +404,21 @@ sample_data(ps_m3_mtg_single_tp.filt)$Tax_Simpson <- alpha_div_mtg_single_tp$Sim
 Figure 2: Network analysis
 ```{r}
 # Prepare phyloseq objects for SECOM
-ps_mtg_last_h <- ps_mtg_last_tp_hp %>% subset_samples(AD_Status == "Healthy") %>% subset_samples(ID != "68675")
+ps_mtg_last_h <- ps_mtg_last_tp_hp %>% subset_samples(AD_Status == "Healthy") 
 ps_mtg_last_p <- ps_mtg_last_tp_hp %>% subset_samples(AD_Status == "Preclinical")
-ps_mtg_closest_h <- ps_mtg_single_tp.hp %>% subset_samples(AD_Status == "Healthy")
-ps_mtg_closest_p <- ps_mtg_single_tp.hp %>% subset_samples(AD_Status == "Preclinical")
+ps_mtg_closest_h_test <- ps_mtg_single_tp %>% subset_samples(AD_Status == "Healthy")
+ps_mtg_closest_p_test <- ps_mtg_single_tp %>% subset_samples(AD_Status == "Preclinical")
 
 ps_mtg_last_p_meta <- data.frame(sample_data(ps_mtg_last_p))
 ps_mtg_last_h_meta <- data.frame(sample_data(ps_mtg_last_h))
-ps_mtg_closest_h_meta <- data.frame(sample_data(ps_mtg_closest_h))
-ps_mtg_closest_p_meta <- data.frame(sample_data(ps_mtg_closest_p))
+ps_mtg_closest_h_meta_test <- data.frame(sample_data(ps_mtg_closest_h))
+ps_mtg_closest_p_meta_test <- data.frame(sample_data(ps_mtg_closest_p))
 
 
 tso_mtg_h_last = mia::makeTreeSummarizedExperimentFromPhyloseq(ps_mtg_last_h)  # 64 samples
 tso_mtg_p_last = mia::makeTreeSummarizedExperimentFromPhyloseq(ps_mtg_last_p) # 25 samples
-tso_mtg_h_closest = mia::makeTreeSummarizedExperimentFromPhyloseq(ps_mtg_closest_h) # 137 samples
-tso_mtg_p_closest = mia::makeTreeSummarizedExperimentFromPhyloseq(ps_mtg_closest_p) # 61 samples
+tso_mtg_h_closest_test = mia::makeTreeSummarizedExperimentFromPhyloseq(ps_mtg_closest_h_test) # 137 samples
+tso_mtg_p_closest_test = mia::makeTreeSummarizedExperimentFromPhyloseq(ps_mtg_closest_p_test) # 61 samples
 
 # Run SECOM
 set.seed(123)
@@ -448,6 +449,7 @@ secom_p_last = secom_linear(data = list(tso_mtg_p_last), assay_name = "counts",
                           soft = FALSE, thresh_len = 20, n_cv = 10, 
                           thresh_hard = 0.3, max_p = 0.05, n_cl = 2)
 
+#### Networks were created with the computed nodes and edges below using Gephi 
 set.seed(123)
 P_closest_res_linear_network <- calc_secom_network_properties(secom_p_closest, overlap_threshold = 10, cor_threshold = 0.6) 
 H_closest_res_linear_network <- calc_secom_network_properties(secom_h_closest, overlap_threshold = 10, cor_threshold = 0.6)
@@ -459,43 +461,54 @@ h_closest_node <- H_closest_res_linear_network$nodes
 h_closest_node <- h_closest_node %>% 
   mutate(id=gsub(".*s__", "", id),
          Label=gsub(".*s__", "", Label))
+write.csv(h_closest_node, "260306_healthy_closest_nodes.csv", row.names = F)
+
 p_closest_node <- P_closest_res_linear_network$nodes
 p_closest_node <- p_closest_node %>% 
   mutate(id=gsub(".*s__", "", id),
          Label=gsub(".*s__", "", Label))
+write.csv(h_closest_node, "260306_preclinical_closest_nodes.csv", row.names = F)
 
 h_last_node <- H_last_res_linear_network$nodes
 h_last_node <- h_last_node %>% 
   mutate(id=gsub(".*s__", "", id),
          Label=gsub(".*s__", "", Label))
+write.csv(h_last_node, "260306_healthy_last_nodes.csv", row.names = F)
+
 p_last_node <- P_last_res_linear_network$nodes
 p_last_node <- p_last_node %>% 
   mutate(id=gsub(".*s__", "", id),
          Label=gsub(".*s__", "", Label))
+write.csv(p_last_node, "260306_preclinical_last_nodes.csv", row.names = F)
 
 h_closest_edges <- H_closest_res_linear_network$edges
 h_closest_edges <- h_closest_edges %>% 
   mutate(Source=gsub(".*s__", "", Source),
          Target=gsub(".*s__", "", Target))
+write.csv(h_closest_edges, "260306_healthy_closest_edges.csv", row.names = F)
+
 p_closest_edges <- P_closest_res_linear_network$edges
 p_closest_edges <- p_closest_edges %>% 
   mutate(Source=gsub(".*s__", "", Source),
          Target=gsub(".*s__", "", Target))
+write.csv(p_closest_edges, "260306_preclincial_closest_edges.csv", row.names = F)
 
 h_last_edges <- H_last_res_linear_network$edges
 h_last_edges <- h_last_edges %>% 
   mutate(Source=gsub(".*s__", "", Source),
          Target=gsub(".*s__", "", Target))
+write.csv(h_last_edges, "260306_healthy_last_edges.csv", row.names = F)
+
 p_last_edges <- P_last_res_linear_network$edges
 p_last_edges <- p_last_edges %>% 
   mutate(Source=gsub(".*s__", "", Source),
          Target=gsub(".*s__", "", Target))
+write.csv(p_last_edges, "260306_preclinical_last_edges.csv", row.names = F)
+
 
 ####### Compare hubbiness metrics between networks: Cross-sectional (Fig D)
-hub_metrics_h_closest <- h_closest_node %>%
-  mutate(Group = "Healthy")
-hub_metrics_p_closest <- p_closest_node %>%
-  mutate(Group = "Preclinical")
+hub_metrics_h_closest <- h_closest_node %>% mutate(Group = "Healthy")
+hub_metrics_p_closest <- p_closest_node %>% mutate(Group = "Preclinical")
 hub_metrics_closest <- rbind(hub_metrics_h_closest, hub_metrics_p_closest)
 hub_metrics_closest$Group <- as.factor(hub_metrics_closest$Group)
 hub_metrics_closest$Group <- factor(hub_metrics_closest$Group, levels=c("Healthy","Preclinical"))
@@ -732,277 +745,6 @@ degree_bw_scatter_faceted <- ggplot(hub_metrics_closest_cutoffs, aes(x = degree,
     y = "Betweenness",
     color = "AD Status") 
 ggsave("250904_keystone_taxa_closest_hp_faceted.pdf", plot = degree_bw_scatter_faceted, bg = "transparent", width = 10, height = 8)
-
-
-```
-
-
-Figure 2: Subsampling analysis (Cross-sectional) [FAILED]
-```{r}
-library("MatchIt")
-library("dplyr")
-library("readxl")
-library(phyloseq)
-library(ANCOMBC)
-library(mia)
-library(tidyr)
-library(tibble)
-library(ggplot2)   
-library(ggExtra)
-library(ggpubr) 
-library(rcompanion)
-library(stringr)
-
-source("main/SECOM_functions.R")
-
-custom_colors_hp_long <- c("Healthy" = "#49b9a5", "Healthy_follow-up" = "#a7d9c1", "Preclinical" = "#eebe61",
-                           "Preclinical_follow-up" = "#e9d8b5")
-
-ps_p_closest <- ps_mtg_single_tp.hp %>% subset_samples(AD_Status == "Preclinical")
-ps_h_closest <- ps_mtg_single_tp.hp %>% subset_samples(AD_Status == "Healthy")
-
-p_closest_meta <- data.frame(sample_data(ps_p_closest))
-h_closest_meta <- data.frame(sample_data(ps_h_closest))
-
-## Match h_closest to p_closest based on metadata
-hp_last_meta <- rbind(p_closest_meta, h_closest_meta)
-
-ps_mtg_single_tp.hp_meta_filt <- ps_mtg_single_tp.hp_meta %>% select(c(Sample_ID, Stool_Date_Collected, ID, age, sex, race, BMI, apoe4.carriage, Diabetes_binary, Hypertension_binary, AD_Status)) %>% filter(complete.cases(.)) # Eliminating rows with NAs 
-
-hp_closest_matched.out <- matchit(AD_Status ~ age + sex + race + BMI + apoe4.carriage + Diabetes_binary + Hypertension_binary, 
-                 data = ps_mtg_single_tp.hp_meta_filt, distance = "mahalanobis",
-                 replace = FALSE)
-#Plot balance
-plot(summary(hp_closest_matched.out))
-
-matched_df <- get_matches(hp_closest_matched.out, data=ps_mtg_single_tp.hp_meta_filt, distance = "prop.score")
-dim(matched_df)
-
-matched_df2 <- match.data(hp_closest_matched.out, data=ps_mtg_single_tp.hp_meta_filt, distance = "prop.score")
-
-match_matrix <- data.frame(hp_closest_matched.out$match.matrix)
-colnames(match_matrix) <- c("Match1")
-match_matrix$Match2 <- rownames(match_matrix)
-
-# Filter out healthy samples with no match (these are the samples we won't calculate networks on)
-match_matrix2 <- match_matrix %>%
-  filter(!is.na(Match1))
-
-# Create metadata for matched pairs 
-## subset to variables that I wanted to match for
-hp_closest_meta_matched <- ps_mtg_single_tp.hp_meta_filt %>%
-  select(c("Sample_ID", "Stool_Date_Collected", "age", "sex","race","BMI", "apoe4.carriage", "Diabetes_binary", "Hypertension_binary","AD_Status"))
-#write.csv(hp_last_meta_matched, "250815_HP_last_meta_matched.csv", row.names = F)
-
-# Change the name of column "Match1" to "Sample_ID" to merge with metadata
-match_matrix2 <- match_matrix2 %>%
-  dplyr::rename(Sample_ID = Match1)
-# Merge
-meta_hp_closest_match <- merge(match_matrix2, hp_closest_meta_matched, by = "Sample_ID")
-# Change column names
-meta_hp_closest_match <- meta_hp_closest_match %>%
-  dplyr::rename(Sample_ID_healthy = Sample_ID) %>%
-  dplyr::rename(Sample_ID = Match2)
-# Merge with Match2 metadata
-meta_hp_closest_match <- merge(meta_hp_closest_match, hp_closest_meta_matched, by = "Sample_ID", suffixes = c("_healthy","_preclinical"))
-# Change column names
-meta_hp_closest_match <- meta_hp_closest_match %>%
-  dplyr::rename(Sample_ID_preclinical = Sample_ID) %>%
-  select(Sample_ID_healthy, everything())
-write.csv(meta_hp_closest_match, "250825_HP_closest_match.csv", row.names = F)
-
-#### Subset each phyloseq object to the selected samples based on matching metadata########
-h_closest_matched <- matched_df2 %>% filter(AD_Status == "Healthy")
-p_closest_matched <- matched_df2 %>% filter(AD_Status == "Preclinical")
-
-ps_mtg_closest_h.matched <- prune_samples(rownames(ps_mtg_single_tp.hp@sam_data) %in% h_closest_matched$Sample_ID, ps_mtg_single_tp.hp)
-ps_mtg_closest_p.matched <- prune_samples(rownames(ps_mtg_single_tp.hp@sam_data) %in% p_closest_matched$Sample_ID, ps_mtg_single_tp.hp)
-
-######################---------------- SECOM --------------- #############################
-tso_mtg_h_closest_matched = mia::convertFromPhyloseq(ps_mtg_closest_h.matched) # 60 samples
-tso_mtg_p_closest_matched = mia::convertFromPhyloseq(ps_mtg_closest_p.matched) # 60 samples
-
-set.seed(123)
-res_linear_h_closest_matched = secom_linear(data = list(tso_mtg_h_closest_matched), assay_name = "counts",
-                                                    tax_level = NULL, pseudo = 0, 
-                                                    prv_cut = 0, lib_cut = 0, corr_cut = 0.6, 
-                                                    wins_quant = c(0.05, 0.95), method = "pearson", 
-                                                    soft = FALSE, thresh_len = 20, n_cv = 10, 
-                                                    thresh_hard = 0.3, max_p = 0.05, n_cl = 2)
-res_linear_p_closest_matched = secom_linear(data = list(tso_mtg_p_closest_matched), assay_name = "counts",
-                                                    tax_level = NULL, pseudo = 0, 
-                                                    prv_cut = 0, lib_cut = 0, corr_cut = 0.6, 
-                                                    wins_quant = c(0.05, 0.95), method = "pearson", 
-                                                    soft = FALSE, thresh_len = 20, n_cv = 10, 
-                                                    thresh_hard = 0.3, max_p = 0.05, n_cl = 2)
-set.seed(123)
-P_closest_res_linear_network.matched <- calc_secom_network_properties(res_linear_p_closest_matched, overlap_threshold = 10, cor_threshold = 0.6) 
-H_closest_res_linear_network.matched <- calc_secom_network_properties(res_linear_h_closest_matched, overlap_threshold = 10, cor_threshold = 0.6)
-
-write.csv(P_closest_res_linear_network.matched$nodes, "250825_secom_linear_preclinical_closest_nodes_subsampled.csv", row.names = F)
-write.csv(P_closest_res_linear_network.matched$edges, "250825_secom_linear_preclinical_closest_edges_subsampled.csv", row.names = F)
-#write.csv(P_closest_res_linear_network$linear_relations_df, "250527_secom_linear_preclinical_closest_gephi_relations.csv", row.names = F)
-
-write.csv(H_closest_res_linear_network.matched$nodes, "250825_secom_linear_healthy_closest_nodes_subsampled.csv", row.names = F)
-write.csv(H_closest_res_linear_network.matched$edges, "250825_secom_linear_healthy_closest_edges_subsampled.csv", row.names = F)
-
-####################------------------ Compare hubbiness metrics between networks -----------------###################
-#### Closest: cross-sectional ########
-hub_metrics_h_closest.matched <- H_closest_res_linear_network.matched$nodes %>%
-  mutate(Group = "Healthy")
-hub_metrics_p_closest.matched <- P_closest_res_linear_network.matched$nodes %>%
-  mutate(Group = "Preclinical")
-hub_metrics_closest.matched <- rbind(hub_metrics_h_closest.matched, hub_metrics_p_closest.matched) 
-hub_metrics_closest.matched$Group <- as.factor(hub_metrics_closest.matched$Group)
-hub_metrics_closest.matched$Group <- factor(hub_metrics_closest.matched$Group, levels=c("Healthy","Preclinical"))
-
-bp_closest_degree_hp.matched <- ggplot(hub_metrics_closest.matched, aes(x = Group, y = degree, fill = Group)) +
-  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
-  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
-  #geom_line(aes(group = Label), color = "gray60", size = 0.8, alpha = 0.6) + # connect same species
-  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
-  scale_fill_manual(values = custom_colors_hp) +  # Change the palette to suit your preferences
-  scale_color_manual(values = custom_colors_hp) +
-  labs(x = "AD Status",
-       y = "Degree",
-       fill = "AD Status") +
-  theme_minimal() +
-  theme(axis.text.x = element_blank(),
-        axis.text.y = element_text(size = 16),
-        axis.title.x = element_blank(),
-        axis.title.y = element_text(size = 18),
-        legend.position = "none",
-        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
-        axis.line = element_line(color = "black", linewidth = 0.6),
-        axis.line.y = element_line(color = "black"),
-        axis.line.x = element_line(color = "black")
-  ) +  # Increase bottom margin
-  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
-  stat_compare_means(comparisons = list(c("Healthy", "Preclinical")),
-                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
-                     step.increase = 0.15, # Helps prevent label overlap
-                     size = 6, #adjusted p-value label size
-                     show.legend = FALSE) 
-ggsave("250825_SECOM_network_hp_Degree_subsampled.pdf", plot = bp_closest_degree_hp.matched, bg = "transparent", width = 10, height = 8) 
-
-bp_closest_betweenness_hp.matched <- ggplot(hub_metrics_closest.matched, aes(x = Group, y = betweenness, fill = Group)) +
-  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
-  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
-  #geom_line(aes(group = Label), color = "gray60", size = 0.8, alpha = 0.6) + # connect same species
-  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
-  scale_fill_manual(values = custom_colors_hp) +  # Change the palette to suit your preferences
-  scale_color_manual(values = custom_colors_hp) +
-  labs(title = "Betweenness centrality of species-species networks by AD Status at closest time point to PET/CSF assessments",
-       subtitle = "Subsampled dataset; Wilcoxon rank sum test (BH corrected)",
-       x = "AD Status",
-       y = "Betweenness Centrality",
-       fill = "AD Status") +
-  theme_minimal() +
-theme(axis.text.x = element_blank(),
-        axis.text.y = element_text(size = 16),
-        axis.title.x = element_blank(),
-        axis.title.y = element_text(size = 18),
-        legend.position = "none",
-        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
-        axis.line = element_line(color = "black", linewidth = 0.6),
-        axis.line.y = element_line(color = "black"),
-        axis.line.x = element_line(color = "black")
-  ) +  # Increase bottom margin
-  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
-  stat_compare_means(comparisons = list(c("Healthy", "Preclinical")),
-                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
-                     step.increase = 0.15, # Helps prevent label overlap
-                     size = 6, #adjusted p-value label size
-                     show.legend = FALSE) 
-ggsave("250825_SECOM_network_hp_Betweenness_subsampled.pdf", plot = bp_closest_betweenness_hp.matched, bg = "transparent", width = 10, height = 8)
-
-bp_closest_closeness_hp.matched <- ggplot(hub_metrics_closest.matched, aes(x = Group, y = closeness, fill = Group)) +
-  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
-  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
-  #geom_line(aes(group = Label), color = "gray60", size = 0.8, alpha = 0.6) + # connect same species
-  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
-  scale_fill_manual(values = custom_colors_hp) +  # Change the palette to suit your preferences
-  scale_color_manual(values = custom_colors_hp) +
-  labs(x = "AD Status",
-       y = "Closeness Centrality",
-       fill = "AD Status") +
-  theme_minimal() +
-  theme(axis.text.x = element_blank(),
-        axis.text.y = element_text(size = 16),
-        axis.title.x = element_blank(),
-        axis.title.y = element_text(size = 18),
-        legend.position = "none",
-        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
-        axis.line = element_line(color = "black", linewidth = 0.6),
-        axis.line.y = element_line(color = "black"),
-        axis.line.x = element_line(color = "black")
-  ) +  # Increase bottom margin
-  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
-  stat_compare_means(comparisons = list(c("Healthy", "Preclinical")),
-                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
-                     step.increase = 0.15, # Helps prevent label overlap
-                     size = 6, #adjusted p-value label size
-                     show.legend = FALSE) 
-ggsave("250825_SECOM_network_hp_Closeness_subsampled.pdf", plot = bp_closest_closeness_hp.matched, bg = "transparent", width = 10, height = 8)
-
-bp_closest_coreness_hp.matched <- ggplot(hub_metrics_closest.matched, aes(x = Group, y = Coreness, fill = Group)) +
-  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
-  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
-  #geom_line(aes(group = Label), color = "gray60", size = 0.8, alpha = 0.6) + # connect same species
-  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
-  scale_fill_manual(values = custom_colors_AD) +  # Change the palette to suit your preferences
-  scale_color_manual(values = custom_colors_AD) +
-  labs(x = "AD Status",
-       y = "Coreness",
-       fill = "AD Status") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 50, hjust = 1, size = 16),
-        axis.text.y = element_text(size = 16),
-        axis.title.x = element_text(size = 18),
-        axis.title.y = element_text(size = 18),
-        legend.position = "none",
-        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
-        axis.line = element_line(color = "black", linewidth = 0.6),
-        axis.line.y = element_line(color = "black"),
-        axis.line.x = element_line(color = "black")
-  ) +  # Increase bottom margin
-  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
-  stat_compare_means(comparisons = list(c("Healthy", "Preclinical")),
-                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
-                     step.increase = 0.15, # Helps prevent label overlap
-                     size = 6, #adjusted p-value label size
-                     show.legend = FALSE) 
-ggsave("250825_SECOM_network_hp_Coreness_subsampled.pdf", plot = bp_closest_coreness_hp.matched, bg = "transparent", width = 10, height = 8)
-
-bp_closest_efficiency_hp.matched <- ggplot(hub_metrics_closest.matched, aes(x = Group, y = local_efficiency, fill = Group)) +
-  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
-  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
-  #geom_line(aes(group = Label), color = "gray60", size = 0.8, alpha = 0.6) + # connect same species
-  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
-  scale_fill_manual(values = custom_colors_hp) +  # Change the palette to suit your preferences
-  scale_color_manual(values = custom_colors_hp) +
-  labs(x = "AD Status",
-       y = "Local Efficiency",
-       fill = "AD Status") +
-  theme_minimal() +
-  theme(axis.text.x = element_blank(),
-        axis.text.y = element_text(size = 16),
-        axis.title.x = element_blank(),
-        axis.title.y = element_text(size = 18),
-        legend.position = "none",
-        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
-        axis.line = element_line(color = "black", linewidth = 0.6),
-        axis.line.y = element_line(color = "black"),
-        axis.line.x = element_line(color = "black")
-  ) +  # Increase bottom margin
-  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
-  stat_compare_means(comparisons = list(c("Healthy", "Preclinical")),
-                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
-                     step.increase = 0.15, # Helps prevent label overlap
-                     size = 6, #adjusted p-value label size
-                     show.legend = FALSE) 
-ggsave("250825_SECOM_network_hp_Efficiency_subsampled.pdf", plot = bp_closest_efficiency_hp.matched, bg = "transparent", width = 10, height = 8)
-
 
 
 ```
@@ -1694,7 +1436,7 @@ anova(lmm_calp.null, lmm_calp.model)
 
 Figure 4
 ```{r}
-mtg_unif_matrix <- create_pairwise_beta_div_matrix(ps_obj = ps_mtg_long,
+mtg_unif_matrix <- create_pairwise_beta_div_matrix(ps_obj = ps_MTG,
                                                  distance_metric = "unifrac",
                                                  distance_metric_string = "Unifrac distance",
                                                  output_name = "m3_MTG_gt10M_stable_noOther_unif")
