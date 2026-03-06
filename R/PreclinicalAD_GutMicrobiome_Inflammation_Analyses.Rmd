@@ -93,7 +93,7 @@ Load Data
 
 meta_data_path <- "~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/SupplementaryTable1.xlsx"
 metaphlan_path <- "~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/MTG_metaphlan3_merged.txt"
-meta_new <- read_excel(meta_data_path)
+
 ## Read in Metaphlan3 tree which is necessary to compute UniFrac distances later ###
 m3.tree.Jan19 <- ape::read.tree("~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/mpa_v30_CHOCOPhlAn_201901_species_tree.nwk.txt")
 m3.tree.Jan19$tip.label <- gsub('GCA_[0-9]+\\|', '', m3.tree.Jan19$tip.label)
@@ -106,6 +106,16 @@ ps_MTG <- make_phyloseq_object(metaphlan_path,
                                  num_vars=num_var,
                                  abund_threshold = 0.1, 
                                  compute_mean=FALSE) 
+
+## Create cross-sectional dataset by subsetting to samples from each participant that are closest to their PET imaging or CSF assessment date 
+all_samples_closest_biomarker_df <- subset_sample_closest_to_biomarker_measure(ps_MTG)
+
+samples_closest_to_biomarker <- as.vector(all_samples_closest_biomarker_df$Sample_ID)
+
+# Subset phyloseq object to the samples closest to the AD biomarker measure 
+## N=234 samples
+ps_mtg_single_tp <- phyloseq::subset_samples(ps_MTG, phyloseq::sample_names(ps_MTG) %in% samples_closest_to_biomarker)
+ps_mtg_single_tp_meta <- data.frame(phyloseq::sample_data(ps_mtg_single_tp))
 ```
 
 Create Table 1 
