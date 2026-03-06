@@ -91,7 +91,7 @@ custom_colors_at_status <- c("Healthy A-/T-"="#49b9a5", "Preclinical A+/T-" = "#
 Load Data
 ```{r}
 
-meta_data_path <- "~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/SupplementaryTable1.xlsx"
+meta_data_path <- "~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/260306_supplementarytable1.xlsx"
 metaphlan_path <- "~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/MTG_metaphlan3_merged.txt"
 
 ## Read in Metaphlan3 tree which is necessary to compute UniFrac distances later ###
@@ -202,21 +202,20 @@ df <- df %>%
 
 axis1.model <- lm(Coord1 ~ Age + Sex + BMI + Copies_of_APOE4_allele + Diabetes + Hypertension + Group, data=df)
 axis1_summary <- tidy(axis1.model)
-write.csv(axis1_summary, "251124_PCoA1_hp_LM_results.csv", row.names = F)
 
 # Type III ANOVA to assess the effect of AD_Status on PCoA1 scores while adjusting for covariates
 ## The effect of AD_Status was marginally significant (F=4.11, p=0.044), indicating that amyloid positivity explained a significant portion of the variation in taxonomic composition along PCoA axis 1. 
 axis1_result <- car::Anova(axis1.model, type = 3) 
-write.csv(axis1_result, "260219_PCoA1_hp_typeIII_ANOVA_results.csv", row.names = T)
+write.csv(axis1_result, "260306_PCoA1_hp_typeIII_ANOVA_results.csv", row.names = T)
 
 axis2.model <- lm(Coord2 ~ Age + Sex + BMI + Copies_of_APOE4_allele + Diabetes + Hypertension + Group, data=df)
 summary(axis2.model)
 axis2_summary <- tidy(axis2.model)
-write.csv(axis2_summary, "251124_PCoA2_hp_LM_results.csv", row.names = T)
+write.csv(axis2_summary, "260306_PCoA2_hp_LM_results.csv", row.names = T)
 
 ## The effect of AD_Status was trending towards significance (F=3.27, p=0.072), indicating that amyloid positivity explained a significant portion of the variation in taxonomic composition along PCoA axis 2.
 axis2_result <- car::Anova(axis2.model, type = 3)
-write.csv(axis2_result, "250219_PCoA2_hp_typeIII_ANOVA_results.csv", row.names = T)
+write.csv(axis2_result, "260306_PCoA2_hp_typeIII_ANOVA_results.csv", row.names = T)
 
 
 ordination.plot <- phyloseq::plot_ordination(ps_mtg_single_tp, ps.ordination,
@@ -234,14 +233,12 @@ ordination.plot <- phyloseq::plot_ordination(ps_mtg_single_tp, ps.ordination,
     legend.title = element_text(size=14),
     legend.text = element_text(size=14),
     legend.position = "left",
-    # legend.box.background = element_rect(color = "black", size = 0.8),
-    # legend.box.margin = margin(t = 5, r = 5, b = 5, l = 5),
     plot.title = element_text(size=15),
     panel.border = element_rect(fill = NA, colour = "black", size = 3)
   )
 # Add ggmarginal 
 ordination.plot <- ggMarginal(ordination.plot, type = 'boxplot', groupFill = TRUE, size = 10)
-ggsave("260213_Fig1A.pdf", plot = ordination.plot, bg = "transparent", width = 9, height = 6)
+ggsave("260306_Fig1A.pdf", plot = ordination.plot, bg = "transparent", width = 9, height = 6)
 
 # Add the Unifrac PCoA 1 and 2 axes to the phyloseq object metadata
 sample_data(ps_mtg_single_tp)$Tax.PCoA1 <- ps.ordination$vectors[,1]
@@ -250,32 +247,16 @@ sample_data(ps_mtg_single_tp)$Tax.PCoA2 <- ps.ordination$vectors[,2]
 # PERMANOVA with all significantly different variables based on Table 1
 ## N = 197 (drops 1 sample without APOE data)
 perm_mtg_single_tp_hp <- permanova_wrapper(ps_mtg_single_tp, values=c("Healthy","Preclinical"), var = "AD_Status", adonis_values = c("Age","Sex","BMI","apoe4_carriage","Diabetes","Hypertension","AD_Status"), ss_method = "margin") #p-value = 0.038
-write.csv(perm_mtg_single_tp_hp@permanova, "260303_Fig1B.csv")
-
-perm_df <- as.data.frame(perm_mtg_single_tp_hp@permanova)
-perm_df$Term <- rownames(perm_df)
-rownames(perm_df) <- NULL
-perm_df2 <- perm_df[, c("Term", "R2", "Pr(>F)")]
-colnames(perm_df2) <- c("Variable", "Metagenomic variance explained", "P value")
-
-perm_df2 <- perm_df2 %>%
-  filter(!Variable %in% c("Residual", "Total"))
-
-ft <- flextable(perm_df2) %>%
-  autofit()
-doc <- read_docx() %>%
-  body_add_flextable(ft)
-print(doc, target = "Fig1B.docx")
+write.csv(perm_mtg_single_tp_hp@permanova, "260306_PCoA_permanova.csv")
 
 ######### Run MaAslin2 and create Fig. 1C ############
-ps_mtg_single_tp.hp_filt <- ps_mtg_single_tp.hp %>% subset_samples(!is.na(apoe4_carriage))
+ps_mtg_single_tp_filt <- ps_mtg_single_tp %>% subset_samples(!is.na(apoe4_carriage))
 
-maaslin_wrapper(ps_mtg_single_tp.hp, random_effects_vector=c(), reference_vector = c("AD_Status,Healthy", "apoe4_carriage,0", "sex,M", "Diabetes", "Hypertension"), fixed_effects_vector = c("age","sex","BMI","apoe4_carriage","Diabetes","Hypertension","AD_Status"), anal_method = "NEGBIN", core = 8)
+maaslin_wrapper(ps_mtg_single_tp_filt, random_effects_vector=c(), reference_vector = c("AD_Status,Healthy", "apoe4_carriage,0", "Sex,M", "Diabetes,0", "Hypertension,0"), fixed_effects_vector = c("Age","Sex","BMI","apoe4_carriage","Diabetes","Hypertension","AD_Status"), anal_method = "NEGBIN", core = 8)
 
-num_samples <- length(ps_mtg_single_tp.hp@sam_data$Sample_ID)
+num_samples <- length(ps_mtg_single_tp_filt@sam_data$Sample_ID)
 sample_cutoff <- num_samples*.10
-maaslin_output <- "~/Library/CloudStorage/Box-Box/DantasLab/AD_microbiome/Paper2/Final_Figures/No_symptomatics/250815_maaslin/ps_mtg_single_tp.hp/significant_results.tsv"
-
+maaslin_output <- "~/Library/CloudStorage/Box-Box/2026_JianMark_ADGutOmics2/Figures/260306_figures/Figure1/MaAslin2_results/significant_results.tsv"
 
 maaslin_df <- read_tsv(maaslin_output) %>% filter(metadata=="AD_Status") %>% mutate(abs_coef=abs(coef)) %>% mutate(qval = p.adjust(pval, method = 'BH')) %>% filter(N.not.0>sample_cutoff) %>% mutate(feature=gsub(".*s__", "", feature)) %>% mutate(value=as.factor(value)) 
 
@@ -295,17 +276,17 @@ maaslin_plot_subset$coefmin <- maaslin_plot_subset$coef - maaslin_plot_subset$st
 
 maaslin_plot_subset$CI95upper <- maaslin_plot_subset$coef + 1.96*maaslin_plot_subset$stderr
 maaslin_plot_subset$CI95lower <- maaslin_plot_subset$coef - 1.96*maaslin_plot_subset$stderr
-write.csv(maaslin_plot_subset, "260213_Fig1C_coeff_values.csv", row.names = F)
+write.csv(maaslin_plot_subset, "260306_Fig1C_coeff_values.csv", row.names = F)
 
 # Plot coefficients
 x_min_lim <- (floor(min / 5) * 6) 
 x_max_lim <- (ceiling(max / 5) * 6) 
 colors_list <- c("#eebe61","#49b9a5")
 
-coeff_p <- ggplot(maaslin_plot_subset, aes(x=coef, y=species,color=as.factor(coef<0)))+
+coeff_p <- ggplot(maaslin_plot_subset, aes(x=coef, y=species, color=as.factor(coef<0)))+
   geom_point(size = 3)+
-  geom_errorbarh(aes(xmax = CI95upper, xmin = CI95lower))+
-  geom_vline(xintercept = 0, linetype='dotted', color='grey', size=1.5)+
+  geom_errorbar(aes(xmax = CI95upper, xmin = CI95lower), orientation = "y")+
+  geom_vline(xintercept = 0, linetype='dotted', color='grey', linewidth=1.5)+
   scale_color_manual(values=colors_list)+
   theme_linedraw()+
   theme(axis.text.y = element_text(size=18),
@@ -315,14 +296,14 @@ coeff_p <- ggplot(maaslin_plot_subset, aes(x=coef, y=species,color=as.factor(coe
         legend.text = element_text(size = 16),
         legend.position = "bottom",
         plot.title = element_text(size=15),
-        panel.border = element_rect(fill=NA, colour="black", size=1))+
+        panel.border = element_rect(fill=NA, colour="black", linewidth=1))+
   scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
   xlab('Coefficient')
-ggsave("260213_Fig1C_coeff.pdf", plot = coeff_p, bg = "transparent", width = 11, height = 12)
+ggsave("260306_Fig1C_coeff.pdf", plot = coeff_p, bg = "transparent", width = 11, height = 12)
 
 #### Generate prevalence plot ###
 ### Access species abundance data 
-abund <- psmelt(ps_mtg_single_tp.hp)
+abund <- psmelt(ps_mtg_single_tp_filt)
 
 abund <- abund %>% mutate(OTU=gsub(".*s__", "", OTU))
 diff_feat_abund <- subset(abund, OTU %in% maaslin_plot_subset$feature)
@@ -345,7 +326,7 @@ abund.df.n0 <- abund.df %>%
   summarise(N = n(), SumNotZero = sum(AbunNotZero)) %>%
   mutate(PercentNotZero = 100*(SumNotZero / N)) %>%
   ungroup()
-write.csv(abund.df.n0, "260213_maaslin2_species_prevalence.csv", 
+write.csv(abund.df.n0, "260306_maaslin2_species_prevalence.csv", 
           row.names = F)
 
 prev_p <- ggplot(abund.df.n0, aes(x = AD_Status, y=OTU, fill=PercentNotZero))+
@@ -360,10 +341,10 @@ prev_p <- ggplot(abund.df.n0, aes(x = AD_Status, y=OTU, fill=PercentNotZero))+
         legend.text = element_text(size = 18),
         panel.border = element_rect(fill=NA, colour="black", size=1))+
   scale_y_discrete(limits=rev)
-ggsave("260213_Fig1C_prev.pdf", plot = prev_p, bg = "transparent", width = 11, height = 12)
+ggsave("260306_Fig1C_prev.pdf", plot = prev_p, bg = "transparent", width = 11, height = 12)
 
 combined_maaslin_p <- coeff_p | prev_p 
-ggsave("260213_Fig1B_MaAslin2_taxa_plot.pdf", plot = combined_maaslin_p, bg = "transparent", width = 16, height = 10)
+ggsave("260306_Fig1B_MaAslin2_taxa_plot.pdf", plot = combined_maaslin_p, bg = "transparent", width = 16, height = 10)
 
 
 ###### Comparing output with Ferreiro et al. 2023 ########
@@ -376,7 +357,7 @@ common_results <- merge(maaslin_df, af_results2, by = "feature", all.x = T) %>% 
                                 coef > 0 & af_coef > 0 ~ "true_pos",
                                 coef < 0 & af_coef < 0 ~ "true_neg",
                                 TRUE ~ "false"))
-common_results %>% count(consistent) %>% mutate(proportion = n / nrow(common_results))
+consistent_prop <- common_results %>%  count(consistent) %>% mutate(proportion = n / sum(n))
 
 maaslin_df <- maaslin_df %>% arrange(desc(coef))
 
@@ -385,19 +366,20 @@ maaslin_df_all <- read_tsv(maaslin_output) %>% mutate(abs_coef=abs(coef)) %>% mu
 
 ## Add a column that indicates whether the taxa was identified in Ferreiro et al. 2023
 maaslin_df_all <- maaslin_df_all %>% mutate(Identified_in_Ferreiro_et_al = ifelse(metadata == "AD_Status", ifelse(is.na(common_results$consistent), FALSE, TRUE), NA_character_))
-write.csv(maaslin_df_all, "260224_MaAslin2_taxa_Supplementary_Table4.csv", row.names = F)
+write.csv(maaslin_df_all, "260306_MaAslin2_taxa_Supplementary_Table4.csv", row.names = F)
+
 ```
 
 Extended Figure 1
 ```{r}
 #### Compare alpha diversity between groups ###
-alpha_div_mtg_single_tp <- alpha_div_wrapper_adjust_var(ps_mtg_single_tp.hp, 
+alpha_div_mtg_single_tp <- alpha_div_wrapper_adjust_var(ps_mtg_single_tp, 
                                                         values=c("Healthy", "Preclinical"),
                                                         color_vector = custom_colors_hp,
                                                         save_adiv_plot = TRUE)
-sample_data(ps_m3_mtg_single_tp.filt)$Tax_Richness <- alpha_div_mtg_single_tp$Richness
-sample_data(ps_m3_mtg_single_tp.filt)$Tax_Shannon <- alpha_div_mtg_single_tp$Shannon
-sample_data(ps_m3_mtg_single_tp.filt)$Tax_Simpson <- alpha_div_mtg_single_tp$Simpson
+sample_data(ps_mtg_single_tp)$Tax_Richness <- alpha_div_mtg_single_tp$Richness
+sample_data(ps_mtg_single_tp)$Tax_Shannon <- alpha_div_mtg_single_tp$Shannon
+sample_data(ps_mtg_single_tp)$Tax_Simpson <- alpha_div_mtg_single_tp$Simpson
 ```
 
 
@@ -406,19 +388,19 @@ Figure 2: Network analysis
 # Prepare phyloseq objects for SECOM
 ps_mtg_last_h <- ps_mtg_last_tp_hp %>% subset_samples(AD_Status == "Healthy") 
 ps_mtg_last_p <- ps_mtg_last_tp_hp %>% subset_samples(AD_Status == "Preclinical")
-ps_mtg_closest_h_test <- ps_mtg_single_tp %>% subset_samples(AD_Status == "Healthy")
-ps_mtg_closest_p_test <- ps_mtg_single_tp %>% subset_samples(AD_Status == "Preclinical")
+ps_mtg_closest_h <- ps_mtg_single_tp %>% subset_samples(AD_Status == "Healthy")
+ps_mtg_closest_p <- ps_mtg_single_tp %>% subset_samples(AD_Status == "Preclinical")
 
 ps_mtg_last_p_meta <- data.frame(sample_data(ps_mtg_last_p))
 ps_mtg_last_h_meta <- data.frame(sample_data(ps_mtg_last_h))
-ps_mtg_closest_h_meta_test <- data.frame(sample_data(ps_mtg_closest_h))
-ps_mtg_closest_p_meta_test <- data.frame(sample_data(ps_mtg_closest_p))
+ps_mtg_closest_h_meta <- data.frame(sample_data(ps_mtg_closest_h))
+ps_mtg_closest_p_meta <- data.frame(sample_data(ps_mtg_closest_p))
 
 
 tso_mtg_h_last = mia::makeTreeSummarizedExperimentFromPhyloseq(ps_mtg_last_h)  # 64 samples
 tso_mtg_p_last = mia::makeTreeSummarizedExperimentFromPhyloseq(ps_mtg_last_p) # 25 samples
-tso_mtg_h_closest_test = mia::makeTreeSummarizedExperimentFromPhyloseq(ps_mtg_closest_h_test) # 137 samples
-tso_mtg_p_closest_test = mia::makeTreeSummarizedExperimentFromPhyloseq(ps_mtg_closest_p_test) # 61 samples
+tso_mtg_h_closest = mia::makeTreeSummarizedExperimentFromPhyloseq(ps_mtg_closest_h) # 137 samples
+tso_mtg_p_closest = mia::makeTreeSummarizedExperimentFromPhyloseq(ps_mtg_closest_p) # 61 samples
 
 # Run SECOM
 set.seed(123)
@@ -461,7 +443,7 @@ h_closest_node <- H_closest_res_linear_network$nodes
 h_closest_node <- h_closest_node %>% 
   mutate(id=gsub(".*s__", "", id),
          Label=gsub(".*s__", "", Label))
-write.csv(h_closest_node, "260306_healthy_closest_nodes.csv", row.names = F)
+
 
 p_closest_node <- P_closest_res_linear_network$nodes
 p_closest_node <- p_closest_node %>% 
@@ -505,6 +487,34 @@ p_last_edges <- p_last_edges %>%
          Target=gsub(".*s__", "", Target))
 write.csv(p_last_edges, "260306_preclinical_last_edges.csv", row.names = F)
 
+##############----------- Create abbreviated name column for display in Gephi --------------###
+h_closest_node <- h_closest_node %>%
+  rowwise() %>%
+  mutate(
+    parts = list(str_split(id, "_")[[1]]),  # wrap in list for rowwise compatibility
+    display_label = case_when(
+      length(parts) == 2 ~ paste0(substr(parts[1], 1, 1), ". ", parts[2]),
+      length(parts) > 2 & "sp" %in% parts ~ paste0(parts[1], " sp. ", paste(parts[3:length(parts)], collapse = ":")),
+      length(parts) > 2 & !"sp" %in% parts ~ paste(paste(parts[1:2], collapse = " "), paste(parts[3:length(parts)], collapse = ":"), sep = " "),
+      TRUE ~ id
+    )
+  ) %>%
+  ungroup() %>% select(-parts)
+write.csv(h_closest_node, "260306_healthy_closest_nodes.csv", row.names = F)
+
+p_closest_node <- p_closest_node %>%
+  rowwise() %>%
+  mutate(
+    parts = list(str_split(id, "_")[[1]]),  # wrap in list for rowwise compatibility
+    display_label = case_when(
+      length(parts) == 2 ~ paste0(substr(parts[1], 1, 1), ". ", parts[2]),
+      length(parts) > 2 & "sp" %in% parts ~ paste0(parts[1], " sp. ", paste(parts[3:length(parts)], collapse = ":")),
+      length(parts) > 2 & !"sp" %in% parts ~ paste(paste(parts[1:2], collapse = " "), paste(parts[3:length(parts)], collapse = ":"), sep = " "),
+      TRUE ~ id
+    )
+  ) %>%
+  ungroup() %>% select(-parts)
+write.csv(h_closest_node, "260306_preclinical_closest_nodes.csv", row.names = F)
 
 ####### Compare hubbiness metrics between networks: Cross-sectional (Fig D)
 hub_metrics_h_closest <- h_closest_node %>% mutate(Group = "Healthy")
@@ -539,32 +549,6 @@ bp_closest_degree <- ggplot(hub_metrics_closest, aes(x = Group, y = degree, fill
                      show.legend = FALSE) 
 ggsave("Fig2C_degree.pdf", plot = bp_closest_degree, bg = "transparent", width = 10, height = 8)
 
-bp_closest_norm_degree <- ggplot(hub_metrics_closest, aes(x = Group, y = normalized_degree, fill = Group)) +
-  geom_boxplot(outlier.shape = NA) +  # Avoids plotting outliers as points since we'll overlay scatter
-  geom_jitter(aes(color = Group),shape = 21, color = "black", width = 0.2, size = 2, stroke = 0.4, alpha = 0.6) +
-  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
-  scale_fill_manual(values = custom_colors_hp) +
-  scale_color_manual(values = custom_colors_hp) +
-  labs(x = "AD Status",
-       y = "Normalized Degree") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 50, hjust = 1, size = 16),
-        axis.text.y = element_text(size = 16),
-        axis.title.x = element_text(size = 18),
-        axis.title.y = element_text(size = 18),
-        legend.position = "none",
-        plot.margin = margin(t = 10, r = 10, b = 50, l = 10),
-        axis.line = element_line(color = "black", linewidth = 0.6),
-        axis.line.y = element_line(color = "black"),
-        axis.line.x = element_line(color = "black")) +  # Increase bottom margin
-  coord_cartesian(clip = "off") +  # Prevents clipping of points at the bottom
-  stat_compare_means(comparisons = list(c("Healthy", "Preclinical")),
-                     method = "wilcox.test", p.adjust.method = "BH", label = "p.format",
-                     step.increase = 0.1, # Helps prevent label overlap
-                     size = 5, #adjusted p-value label size
-                     show.legend = FALSE) 
-ggsave("normalized_degree_hp.pdf", plot = bp_closest_norm_degree, bg = "transparent", width = 10, height = 8) ## Stats were replaced with dunn test results
-
 
 bp_closest_betweenness <- ggplot(hub_metrics_closest, aes(x = Group, y = betweenness, fill = Group)) +
   geom_boxplot(outlier.shape = NA) +  
@@ -572,13 +556,11 @@ bp_closest_betweenness <- ggplot(hub_metrics_closest, aes(x = Group, y = between
   scale_y_continuous(expand = expansion(mult = c(0.1, 0.1))) +  # Adds padding at the bottom
   scale_fill_manual(values = custom_colors_hp) +  # Change the palette to suit your preferences
   scale_color_manual(values = custom_colors_hp) +
-  labs(title = "Betweenness centrality of species-species networks by AD Status at closest time point to PET/CSF assessments",
-       subtitle = "Wilcoxon rank sum test (BH corrected)",
-       x = "AD Status",
+  labs(x = "AD Status",
        y = "Betweenness Centrality",
        fill = "AD Status") +
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 50, hjust = 1, size = 16),
+  theme(axis.text.x = element_text(size = 16),
         axis.text.y = element_text(size = 16),
         axis.title.x = element_text(size = 18),
         axis.title.y = element_text(size = 18),
@@ -679,12 +661,6 @@ bp_closest_efficiency <- ggplot(hub_metrics_closest, aes(x = Group, y = local_ef
                      show.legend = FALSE) 
 ggsave("Figure2C_local_effiency.pdf", plot = bp_closest_efficiency, bg = "transparent", width = 10, height = 8)
 
-combined_plot <- bp_closest_degree / bp_closest_closeness / bp_closest_efficiency / bp_closest_coreness
-ggsave("Fig_2C.pdf", plot = combined_plot, bg = "transparent", width = 10, height = 20)
-
-combined_plot_hor <- bp_closest_degree | bp_closest_closeness | bp_closest_efficiency | bp_closest_coreness
-ggsave("Fig_2C_hor.pdf", plot = combined_plot_hor, bg = "transparent", width = 20, height = 8)
-
 ### Identifying keystone taxa (taxa with high degree and betweenness) for labeling ###
 summary(hub_metrics_closest$degree)
 summary(hub_metrics_closest$betweenness)
@@ -744,7 +720,7 @@ degree_bw_scatter_faceted <- ggplot(hub_metrics_closest_cutoffs, aes(x = degree,
     x = "Degree",
     y = "Betweenness",
     color = "AD Status") 
-ggsave("250904_keystone_taxa_closest_hp_faceted.pdf", plot = degree_bw_scatter_faceted, bg = "transparent", width = 10, height = 8)
+ggsave("260306_keystone_taxa_closest_hp_faceted.pdf", plot = degree_bw_scatter_faceted, bg = "transparent", width = 10, height = 8)
 
 
 ```
