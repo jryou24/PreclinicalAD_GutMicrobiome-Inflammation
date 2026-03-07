@@ -449,43 +449,43 @@ p_closest_node <- P_closest_res_linear_network$nodes
 p_closest_node <- p_closest_node %>% 
   mutate(id=gsub(".*s__", "", id),
          Label=gsub(".*s__", "", Label))
-write.csv(h_closest_node, "260306_preclinical_closest_nodes.csv", row.names = F)
+#write.csv(h_closest_node, "260306_preclinical_closest_nodes.csv", row.names = F)
 
 h_last_node <- H_last_res_linear_network$nodes
 h_last_node <- h_last_node %>% 
   mutate(id=gsub(".*s__", "", id),
          Label=gsub(".*s__", "", Label))
-write.csv(h_last_node, "260306_healthy_last_nodes.csv", row.names = F)
+#write.csv(h_last_node, "260306_healthy_last_nodes.csv", row.names = F)
 
 p_last_node <- P_last_res_linear_network$nodes
 p_last_node <- p_last_node %>% 
   mutate(id=gsub(".*s__", "", id),
          Label=gsub(".*s__", "", Label))
-write.csv(p_last_node, "260306_preclinical_last_nodes.csv", row.names = F)
+#write.csv(p_last_node, "260306_preclinical_last_nodes.csv", row.names = F)
 
 h_closest_edges <- H_closest_res_linear_network$edges
 h_closest_edges <- h_closest_edges %>% 
   mutate(Source=gsub(".*s__", "", Source),
          Target=gsub(".*s__", "", Target))
-write.csv(h_closest_edges, "260306_healthy_closest_edges.csv", row.names = F)
+#write.csv(h_closest_edges, "260306_healthy_closest_edges.csv", row.names = F)
 
 p_closest_edges <- P_closest_res_linear_network$edges
 p_closest_edges <- p_closest_edges %>% 
   mutate(Source=gsub(".*s__", "", Source),
          Target=gsub(".*s__", "", Target))
-write.csv(p_closest_edges, "260306_preclincial_closest_edges.csv", row.names = F)
+#write.csv(p_closest_edges, "260306_preclincial_closest_edges.csv", row.names = F)
 
 h_last_edges <- H_last_res_linear_network$edges
 h_last_edges <- h_last_edges %>% 
   mutate(Source=gsub(".*s__", "", Source),
          Target=gsub(".*s__", "", Target))
-write.csv(h_last_edges, "260306_healthy_last_edges.csv", row.names = F)
+#write.csv(h_last_edges, "260306_healthy_last_edges.csv", row.names = F)
 
 p_last_edges <- P_last_res_linear_network$edges
 p_last_edges <- p_last_edges %>% 
   mutate(Source=gsub(".*s__", "", Source),
          Target=gsub(".*s__", "", Target))
-write.csv(p_last_edges, "260306_preclinical_last_edges.csv", row.names = F)
+#write.csv(p_last_edges, "260306_preclinical_last_edges.csv", row.names = F)
 
 ##############----------- Create abbreviated name column for display in Gephi --------------###
 h_closest_node <- h_closest_node %>%
@@ -496,10 +496,7 @@ h_closest_node <- h_closest_node %>%
       length(parts) == 2 ~ paste0(substr(parts[1], 1, 1), ". ", parts[2]),
       length(parts) > 2 & "sp" %in% parts ~ paste0(parts[1], " sp. ", paste(parts[3:length(parts)], collapse = ":")),
       length(parts) > 2 & !"sp" %in% parts ~ paste(paste(parts[1:2], collapse = " "), paste(parts[3:length(parts)], collapse = ":"), sep = " "),
-      TRUE ~ id
-    )
-  ) %>%
-  ungroup() %>% select(-parts)
+      TRUE ~ id)) %>% ungroup() %>% select(-parts)
 write.csv(h_closest_node, "260306_healthy_closest_nodes.csv", row.names = F) 
 
 p_closest_node <- p_closest_node %>%
@@ -509,12 +506,28 @@ p_closest_node <- p_closest_node %>%
     display_label = case_when(
       length(parts) == 2 ~ paste0(substr(parts[1], 1, 1), ". ", parts[2]),
       length(parts) > 2 & "sp" %in% parts ~ paste0(parts[1], " sp. ", paste(parts[3:length(parts)], collapse = ":")),
-      length(parts) > 2 & !"sp" %in% parts ~ paste(paste(parts[1:2], collapse = " "), paste(parts[3:length(parts)], collapse = ":"), sep = " "),
-      TRUE ~ id
-    )
-  ) %>%
-  ungroup() %>% select(-parts)
+      length(parts) > 2 & !"sp" %in% parts ~ paste(paste(parts[1:2], collapse = " "), paste(parts[3:length(parts)], collapse = ":"), sep = " "),TRUE ~ id)) %>% ungroup() %>% select(-parts)
 write.csv(p_closest_node, "260306_preclinical_closest_nodes.csv", row.names = F)
+
+h_last_node <- h_last_node %>%
+  rowwise() %>%
+  mutate(
+    parts = list(str_split(id, "_")[[1]]),  # wrap in list for rowwise compatibility
+    display_label = case_when(
+      length(parts) == 2 ~ paste0(substr(parts[1], 1, 1), ". ", parts[2]),
+      length(parts) > 2 & "sp" %in% parts ~ paste0(parts[1], " sp. ", paste(parts[3:length(parts)], collapse = ":")),
+      length(parts) > 2 & !"sp" %in% parts ~ paste(paste(parts[1:2], collapse = " "), paste(parts[3:length(parts)], collapse = ":"), sep = " "),TRUE ~ id)) %>% ungroup() %>% select(-parts)
+write.csv(h_last_node, "260306_healthy_last_nodes.csv", row.names = F)
+
+p_last_node <- p_last_node %>%
+  rowwise() %>%
+  mutate(
+    parts = list(str_split(id, "_")[[1]]),  # wrap in list for rowwise compatibility
+    display_label = case_when(
+      length(parts) == 2 ~ paste0(substr(parts[1], 1, 1), ". ", parts[2]),
+      length(parts) > 2 & "sp" %in% parts ~ paste0(parts[1], " sp. ", paste(parts[3:length(parts)], collapse = ":")),
+      length(parts) > 2 & !"sp" %in% parts ~ paste(paste(parts[1:2], collapse = " "), paste(parts[3:length(parts)], collapse = ":"), sep = " "),TRUE ~ id)) %>% ungroup() %>% select(-parts)
+write.csv(p_last_node, "260306_preclinical_last_nodes.csv", row.names = F)
 
 ####### Compare hubbiness metrics between networks: Cross-sectional (Fig D)
 hub_metrics_h_closest <- h_closest_node %>% mutate(Group = "Healthy")
