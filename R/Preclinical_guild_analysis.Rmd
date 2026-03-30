@@ -1,0 +1,190 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)          #3.5.0
+library(ggExtra)          #0.10.1
+library(ggridges)
+library(ggrepel)
+library(dplyr)            #1.1.2
+library(phyloseq)         #1.46.0
+library(vegan)
+library(Maaslin2)         #1.12.0
+library(ape)              #5.7.1
+library(readxl)           #1.4.3     
+library(microViz)         #0.12.0
+library(ggside)           #0.3.1
+library(patchwork)        #1.2
+library(ComplexHeatmap)   #2.14.0
+library(tidyr)            #1.3.1
+library(readr)            #2.1.5
+library(reshape2)         #1.4.4
+library(rstatix)          #0.7.2
+library(ggpubr)           #0.6.0
+library(NatParksPalettes) #0.2.0
+library(cowplot)          #1.1.2
+library(stringr)          #1.5.1
+library(Boruta)           #8.0.0 
+library(caret)            #6.0-94
+library(VIM)              #6.2.2 
+library(corpcor)
+library(corrplot)
+library(Hmisc)
+library(ANCOMBC)          #2_4.0   
+library(MTXmodel)         #1.2.4
+library(forcats)          #1.0.0
+library(tidyverse)        #2.0.0  
+library(scales)           #1.3.0
+library(microbiome)
+library(lme4)
+library(lmerTest)
+library(lmtest)
+library(broom)
+library(MuMIn)
+library(car)
+library(emmeans)
+library(igraph)
+library(FSA)
+library(rcompanion)
+library(mEQO)
+## Data Processing Functions 
+source("Functions/phyloseq_object.R")
+source("Functions/tree_object.R")
+source("Functions/data_parsing.R")
+source("Functions/Correlation_analyses.R")
+source("Functions/GLM_functions.R")
+#source("main/HighstatLib.r")
+
+##Analysis and Plotting Functions 
+source("Functions/oordinate_wrapper.R")
+source("Functions/ordinate_metaphlan.R")
+source("Functions/maaslin_MTX_DE.R")
+source("Functions/plot_maaslin_MTX_DE.R")
+source("Functions/compare_longitudinal_beta_diversity.R")
+source("Functions/Statistical_tests.R")
+source("Functions/secom.R")
+source("Functions/SECOM_functions.R")
+source("Functions/rf_boruta.R")
+source("Functions/customtab.R")
+cur.date <- format(Sys.Date(), "%y%m%d")
+output_path <- (paste0("outputs/", cur.date, "/", cur.date))
+output_path2 <- (paste0("outputs/", cur.date, "/"))
+
+
+cat_var <- c('Sample_ID','ID','Time_point','Sample_time','Sex','Race',"CDR",'AD_Status', 'Amyloid_positivity', 'Tau_positivity','Tracer_used_for_classification','Tau_marker','amyloid_tau_status','Tracer.mrfree','Tracer.fsuvr','Tracer.av45','Tracer.tau','apoe_genotype','apoe4_carriage','Diabetes_binary',	'Hypertension_binary','Diabetes',	'Hypertension')
+
+
+num_var <- c("Years_Education","Age","Days_since_CDR",'Days_since_biomarker_assessment',"combined.centiloid","MRFreePET_Centiloid","Days_sinceMrFreePETpib","pib_fsuvr_rsf_tot_cortmean","Centiloid_PiB_fSUVR_rsf_TOT_CORT","Days_sincePETpib","av45_fsuvr_rsf_tot_cortmean","Centiloid_AV45_fSUVR_rsf_TOT_COR","Days_sincePETav45","LUMIPULSE_CSF_AB42","LUMIPULSE_CSF_AB40","LUMIPULSE_CSF_tTau","LUMIPULSE_CSF_pTau","CSF_ab42_ab40_ratio","Days_sinceCSF","Tauopathy","Days_sincePETtau","mr_vol_tot_wmhypointensities","LOAD_CorticalSignature_Thickness","mr_vol_r_hippocampus","mr_vol_l_hippocampus","mr_vol_tot_intracranial","hippocampus_vol_div_icv",	"Days_sinceMRI","NGAL_ug_ml","Calp_ug_ml",	"log2_NGAL","log2_Calp","WEIGHT","HEIGHT","BMI","Calories_kcal",	'Calories_from_fat_kcal',	'Calories_from_SatFat_kcal',	'Protein_g',	'Carbohydrates_g',	'Total_dietary_fiber_g',	'Total_soluble_fiber_g',	'Dietary_fiber_US_2016_g',	'Soluble_fiber_US_2016',	'Total_sugars_g',	'Added_sugar_g','Monosaccharides_g')
+
+
+# Custom colors for plotting
+custom_colors_hp <- c("Healthy" = "#49b9a5", "Preclinical" = "#eebe61")
+custom_colors_AD <- c("Healthy" = "#49b9a5", "Preclinical" = "#eebe61", "Symptomatic" = "#a98ec2")
+custom_colors_hp_long <- c("Healthy" = "#49b9a5", "Healthy_follow-up" = "#a7d9c1", "Preclinical" = "#eebe61",
+                           "Preclinical_follow-up" = "#e9d8b5")
+custom_colors_at_status <- c("Healthy A-/T-"="#49b9a5", "Preclinical A+/T-" = "#eebe61", "Preclinical A+/T+" = "#b08d25", "SNAP" =  "#237a80")
+
+```
+
+Load Data
+```{r}
+
+meta_data_path <- "~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/260306_supplementarytable1.xlsx"
+metaphlan_path <- "~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/MTG_metaphlan3_merged.txt"
+
+## Read in Metaphlan3 tree which is necessary to compute UniFrac distances later ###
+m3.tree.Jan19 <- ape::read.tree("~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/mpa_v30_CHOCOPhlAn_201901_species_tree.nwk.txt")
+m3.tree.Jan19$tip.label <- gsub('GCA_[0-9]+\\|', '', m3.tree.Jan19$tip.label)
+
+## Create phyloseq object
+ps_MTG <- make_phyloseq_object(metaphlan_path, 
+                                 path_to_metadata= meta_data_path, 
+                                 tree_object = m3.tree.Jan19, 
+                                 cat_vars=cat_var,
+                                 num_vars=num_var,
+                                 abund_threshold = 0.1, 
+                                 compute_mean=FALSE) 
+
+# Subset phyloseq object to the samples closest to the AD biomarker measure 
+## N=198
+ps_mtg_single_tp <- phyloseq::subset_samples(ps_MTG, Sample_time == "closest")
+ps_mtg_single_tp_meta <- data.frame(phyloseq::sample_data(ps_mtg_single_tp))
+### Create follow-up dataset by subsetting to last samples from each participant
+## Create phyloseq object for last samples (N = 89)
+ps_mtg_last_tp_hp <- ps_MTG %>% subset_samples(Sample_time == "last follow-up")
+ps_mtg_last_hp_meta <- data.frame(phyloseq::sample_data(ps_mtg_last_tp_hp))
+
+```
+
+```{r}
+set.seed(42)
+ps_cs_hp <- ps_mtg_single_tp
+
+train_indices <- sample(1:198, size = 0.6 * 198)
+meta <- sample_data(ps_cs_hp) %>% as.data.frame()
+
+meta$set <- "test"
+meta$set[train_indices] <- "train"
+library(scales)
+meta$scaled_centiloid <- scales::rescale(meta$combined.centiloid, to = c(0, 100))
+sample_data(ps_cs_hp) <- sample_data(meta)
+
+
+ps_cs_hp_train <- ps_cs_hp %>% ps_filter(set=="train")
+
+```
+
+```{r}
+
+
+ps_filtered <- subset_samples(ps_cs_hp_train, !is.na(scaled_centiloid)) 
+temp_abundance <- ps_filtered %>% otu_table() %>% as.data.frame() %>% t()
+temp_measure <- ps_filtered %>% sample_data() %>% data.frame()  
+
+
+aic<-sapply(1:10,function(N){
+	assemblage<-EQO_bls(temp_abundance,temp_measure$scaled_centiloid,Nmax=N)$abundance
+	return(AIC(lm(temp_measure$scaled_centiloid~assemblage))+2*(N-1))
+})
+
+guild <- EQO_bls(temp_abundance,temp_measure$scaled_centiloid,Nmax=3)
+
+guild_members <- guild$members
+guild_members_long <- guild$members
+guild_members_long <- gsub("(__[A-Za-z0-9_]+)\\.", "\\1|", guild$members)
+
+for (species_name in guild_members_long) {
+  if (species_name %in% taxa_names(ps_cs_hp)) {
+    species_abundance <- as.vector(otu_table(ps_cs_hp)[species_name, ])  # Switch to [species, ]
+    sample_data(ps_cs_hp)[[paste0(species_name, "_abundance")]] <- species_abundance
+  } else {
+    warning(paste("Species", species_name, "not found in phyloseq object"))
+  }
+}
+
+guild_metadata <- sample_data(ps_cs_hp) %>% data.frame()
+
+guild_metadata$guild_abundance <- rowSums(guild_metadata[, grepl("s__", names(guild_metadata))], na.rm = TRUE)
+write.csv(guild_metadata, paste0("~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/CS_guild_metadata.csv"), row.names = FALSE)
+
+
+for (species_name in guild_members_long) {
+  if (species_name %in% taxa_names(ps_MTG)) {
+    species_abundance <- as.vector(otu_table(ps_MTG)[species_name, ])  # Switch to [species, ]
+    sample_data(ps_MTG)[[paste0(species_name, "_abundance")]] <- species_abundance
+  } else {
+    warning(paste("Species", species_name, "not found in phyloseq object"))
+  }
+}
+
+long_guild_metadata <- sample_data(ps_MTG) %>% data.frame()
+long_guild_metadata$guild_abundance <- rowSums(long_guild_metadata[, grepl("s__", names(long_guild_metadata))], na.rm = TRUE)
+write.csv(long_guild_metadata, paste0("~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/full_guild_metadata.csv"), row.names = FALSE)
+long_guild_metadata <- long_guild_metadata %>% filter(AD_Status %in% c("Healthy", "Preclinical"))
+
+
+
+
+```
