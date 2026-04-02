@@ -1614,7 +1614,7 @@ bp_last_efficiency <- ggplot(hub_metrics_last, aes(x = Group, y = local_efficien
 ggsave("Extended_Fig_5D_local_effiency_follow-up.pdf", plot = bp_last_efficiency, bg = "transparent", width = 10, height = 8)
 ```
 
-Fig 5E and F: Guilds
+Fig 2D and Extended Data Fig 2E: Guilds
 ```{r}
 ## Hard coding guild members
 guild_members <- c("Roseburia_sp_CAG_471", "Roseburia_hominis", "Bacteroides_cellulosilyticus")
