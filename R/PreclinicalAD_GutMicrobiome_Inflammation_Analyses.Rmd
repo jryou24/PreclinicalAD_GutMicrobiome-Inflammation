@@ -1622,6 +1622,59 @@ guild_members_long <- c('k__Bacteria.p__Firmicutes.c__Clostridia.o__Clostridiale
 guild_members_long <- gsub("(__[A-Za-z0-9_]+)\\.", "\\1|", guild_members_long)
 
 for (species_name in guild_members_long) {
+  if (species_name %in% taxa_names(ps_mtg_single_tp)) {
+    species_abundance <- as.vector(otu_table(ps_mtg_single_tp)[species_name, ])  
+    sample_data(ps_mtg_single_tp)[[paste0(species_name, "_abundance")]] <- species_abundance
+  } else {
+    warning(paste("Species", species_name, "not found in phyloseq object"))
+  }
+}
+
+ps_mtg_single_tp_meta <- data.frame(phyloseq::sample_data(ps_mtg_single_tp))
+
+ps_mtg_single_tp_meta$guild_abundance <- rowSums(ps_mtg_single_tp_meta[, grepl("s__", names(ps_mtg_single_tp_meta))], na.rm = TRUE)
+#write.csv(guild_metadata, paste0(output_path, "_guild_metadata.csv"), row.names = FALSE)
+
+ps_mtg_single_tp_meta <- ps_mtg_single_tp_meta %>% mutate(guild_abundance_adj = guild_abundance + 1e-6)
+
+### Obtain test train split datasets for plots #####
+test_train_df <- read_excel("Data/CS_guild_metadata.xlsx")
+test_train_df <- test_train_df %>% select(Sample_ID, set)
+ps_mtg_single_tp_meta <- merge(ps_mtg_single_tp_meta, test_train_df, by = "Sample_ID")
+rownames(ps_mtg_single_tp_meta) <- ps_mtg_single_tp_meta$Sample_ID
+sample_data(ps_mtg_single_tp) <- ps_mtg_single_tp_meta
+
+ps_mtg_single_tp_train <- ps_mtg_single_tp %>% ps_filter(set=="train")  %>% sample_data() %>% data.frame() 
+ps_mtg_single_tp_test <- ps_mtg_single_tp %>% ps_filter(set=="test")  %>% sample_data() %>% data.frame()
+
+## Plot Figure 2D
+closest_hp_abundance_plot <- ggplot(ps_mtg_single_tp_meta, aes(x = AD_Status, y = guild_abundance_adj, color = AD_Status)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.2, height = 0, alpha = 0.8, size = 1) +
+  stat_compare_means(method = "wilcox.test", label = "p.format") +
+  scale_color_manual(values = custom_colors_hp) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 16),       
+    axis.title = element_text(size = 18), 
+    axis.text = element_text(size = 14),  
+    legend.position = "none") +
+  scale_y_log10() +
+  labs(
+    y = "Guild Abundance",
+    x = "AD Status")
+ggsave("260402_MTG_guild_abund_comparison_hp.pdf", plot = closest_hp_abundance_plot,bg = "transparent", width = 8, height = 6)
+
+```
+
+Figure 5 Guilds
+```{r}
+## Hard coding guild members
+guild_members <- c("Roseburia_sp_CAG_471", "Roseburia_hominis", "Bacteroides_cellulosilyticus")
+guild_members_long <- c('k__Bacteria.p__Firmicutes.c__Clostridia.o__Clostridiales.f__Lachnospiraceae.g__Roseburia.s__Roseburia_sp_CAG_471',	'k__Bacteria.p__Firmicutes.c__Clostridia.o__Clostridiales.f__Lachnospiraceae.g__Roseburia.s__Roseburia_hominis',	'k__Bacteria.p__Bacteroidetes.c__Bacteroidia.o__Bacteroidales.f__Bacteroidaceae.g__Bacteroides.s__Bacteroides_cellulosilyticus')
+guild_members_long <- gsub("(__[A-Za-z0-9_]+)\\.", "\\1|", guild_members_long)
+
+for (species_name in guild_members_long) {
   if (species_name %in% taxa_names(ps_mtg_last_tp_hp)) {
     species_abundance <- as.vector(otu_table(ps_mtg_last_tp_hp)[species_name, ])  # Switch to [species, ]
     sample_data(ps_mtg_last_tp_hp)[[paste0(species_name, "_abundance")]] <- species_abundance
@@ -1632,6 +1685,8 @@ for (species_name in guild_members_long) {
 
 ps_mtg_last_hp_meta <- data.frame(phyloseq::sample_data(ps_mtg_last_tp_hp))
 
+ps_mtg_single_tp_meta
+
 ps_mtg_last_hp_meta$guild_abundance <- rowSums(ps_mtg_last_hp_meta[, grepl("s__", names(ps_mtg_last_hp_meta))], na.rm = TRUE)
 #write.csv(guild_metadata, paste0(output_path, "_guild_metadata.csv"), row.names = FALSE)
 
@@ -1639,7 +1694,7 @@ ps_mtg_last_hp_meta <- ps_mtg_last_hp_meta %>% mutate(guild_abundance_adj = guil
 
 custom_colors_hp_last <- c("Healthy" = "#a7d9c1", "Preclinical" = "#e9d8b5")
 
-last_hp_abundance_plot <- ggplot(ps_mtg_last_hp_meta, aes(x = AD_Status, y = guild_abundance_adj, color = AD_Status)) +
+closest_hp_abundance_plot <- ggplot(ps_mtg_last_hp_meta, aes(x = AD_Status, y = guild_abundance_adj, color = AD_Status)) +
   geom_boxplot(outlier.shape = NA) +
   geom_jitter(width = 0.2, height = 0, alpha = 0.8, size = 1) +
   stat_compare_means(method = "wilcox.test", label = "p.format") +
@@ -1689,5 +1744,6 @@ last_guild_anova_summary <- tidy(anova(lm0_last_guild, lm_last_guild_interaction
 
 write.csv(lm_last_guild_interaction_summary, "251029_lm_guild_centiloid_ad_status_interaction_hp_last_summary.csv", row.names = FALSE)
 write.csv(last_guild_anova_summary, "251029_lm_guild_centiloid_ad_status_interaction_hp_last_anova.csv", row.names = FALSE)
+
 ```
 
