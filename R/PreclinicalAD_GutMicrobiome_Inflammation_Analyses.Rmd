@@ -91,7 +91,7 @@ custom_colors_at_status <- c("Healthy A-/T-"="#49b9a5", "Preclinical A+/T-" = "#
 Load Data
 ```{r}
 
-meta_data_path <- "~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/260306_supplementarytable1.xlsx"
+meta_data_path <- "~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/full_guild_metadata_train_test_split.xlsx"
 metaphlan_path <- "~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/MTG_metaphlan3_merged.txt"
 
 ## Read in Metaphlan3 tree which is necessary to compute UniFrac distances later ###
@@ -1617,8 +1617,8 @@ ggsave("Extended_Fig_5D_local_effiency_follow-up.pdf", plot = bp_last_efficiency
 Fig 5E and F: Guilds
 ```{r}
 ## Hard coding guild members
-guild_members <- c("Roseburia_sp_CAG_471", "Roseburia_hominis", "Alistipes_shahii", "Bacteroides_cellulosilyticus")
-guild_members_long <- c('k__Bacteria.p__Firmicutes.c__Clostridia.o__Clostridiales.f__Lachnospiraceae.g__Roseburia.s__Roseburia_sp_CAG_471',	'k__Bacteria.p__Firmicutes.c__Clostridia.o__Clostridiales.f__Lachnospiraceae.g__Roseburia.s__Roseburia_hominis',	'k__Bacteria.p__Bacteroidetes.c__Bacteroidia.o__Bacteroidales.f__Rikenellaceae.g__Alistipes.s__Alistipes_shahii',	'k__Bacteria.p__Bacteroidetes.c__Bacteroidia.o__Bacteroidales.f__Bacteroidaceae.g__Bacteroides.s__Bacteroides_cellulosilyticus')
+guild_members <- c("Roseburia_sp_CAG_471", "Roseburia_hominis", "Bacteroides_cellulosilyticus")
+guild_members_long <- c('k__Bacteria.p__Firmicutes.c__Clostridia.o__Clostridiales.f__Lachnospiraceae.g__Roseburia.s__Roseburia_sp_CAG_471',	'k__Bacteria.p__Firmicutes.c__Clostridia.o__Clostridiales.f__Lachnospiraceae.g__Roseburia.s__Roseburia_hominis',	'k__Bacteria.p__Bacteroidetes.c__Bacteroidia.o__Bacteroidales.f__Bacteroidaceae.g__Bacteroides.s__Bacteroides_cellulosilyticus')
 guild_members_long <- gsub("(__[A-Za-z0-9_]+)\\.", "\\1|", guild_members_long)
 
 for (species_name in guild_members_long) {
@@ -1675,11 +1675,15 @@ cent_cor_last_hp <- ggplot(ps_mtg_last_hp_meta, aes(x = guild_abundance , y = co
     x = "Guild Abundance (%)") 
 ggsave("251028_MTG_single_tp_guild_centiloid_hp_test_subset.pdf", plot = cent_cor_last_hp,bg = "transparent", width = 8, height = 6)
 
+
+ps_mtg_single_tp_train <- ps_mtg_single_tp %>% ps_filter(set=="train")  %>% sample_data() %>% data.frame() %>% mutate(guild_abundance_adj = guild_abundance + 1e-6)
+ps_mtg_single_tp_test <- ps_mtg_single_tp %>% ps_filter(set=="test")  %>% sample_data() %>% data.frame()%>% mutate(guild_abundance_adj = guild_abundance + 1e-6)
+
 ## Test whether there is an AD_Status effect on the relationship between centiloid and guild abundance in the test dataset
-lm_last_guild_interaction <- lm(combined.centiloid ~ guild_abundance * AD_Status, data = ps_mtg_last_hp_meta)
+lm_last_guild_interaction <- lm(combined.centiloid ~ guild_abundance * AD_Status, data = ps_mtg_single_tp_train)
 lm_last_guild_interaction_summary <- tidy(lm_last_guild_interaction)
 
-lm0_last_guild <- lm(combined.centiloid ~ guild_abundance + AD_Status, data = ps_mtg_last_hp_meta)
+lm0_last_guild <- lm(combined.centiloid ~ guild_abundance + AD_Status, data = ps_mtg_single_tp_train)
 
 last_guild_anova_summary <- tidy(anova(lm0_last_guild, lm_last_guild_interaction))
 
