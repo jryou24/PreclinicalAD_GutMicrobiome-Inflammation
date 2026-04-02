@@ -119,10 +119,10 @@ ps_mtg_last_hp_meta <- data.frame(phyloseq::sample_data(ps_mtg_last_tp_hp))
 ```
 
 ```{r}
-set.seed(123)
+set.seed(42)
 ps_cs_hp <- ps_mtg_single_tp
 
-train_indices <- sample(1:198, size = 0.5 * 198)
+train_indices <- sample(1:198, size = 0.6 * 198)
 meta <- sample_data(ps_cs_hp) %>% as.data.frame()
 
 meta$set <- "test"
@@ -167,7 +167,7 @@ for (species_name in guild_members_long) {
 guild_metadata <- sample_data(ps_cs_hp) %>% data.frame()
 
 guild_metadata$guild_abundance <- rowSums(guild_metadata[, grepl("s__", names(guild_metadata))], na.rm = TRUE)
-#write.csv(guild_metadata, paste0("~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/CS_guild_metadata.csv"), row.names = FALSE)
+write.csv(guild_metadata, paste0("~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/CS_guild_metadata.csv"), row.names = FALSE)
 
 
 for (species_name in guild_members_long) {
@@ -181,7 +181,7 @@ for (species_name in guild_members_long) {
 
 long_guild_metadata <- sample_data(ps_MTG) %>% data.frame()
 long_guild_metadata$guild_abundance <- rowSums(long_guild_metadata[, grepl("s__", names(long_guild_metadata))], na.rm = TRUE)
-#write.csv(long_guild_metadata, paste0("~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/full_guild_metadata.csv"), row.names = FALSE)
+write.csv(long_guild_metadata, paste0("~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/full_guild_metadata.csv"), row.names = FALSE)
 long_guild_metadata <- long_guild_metadata %>% filter(AD_Status %in% c("Healthy", "Preclinical"))
 
 
