@@ -1,3 +1,0 @@
-"term","df.residual","rss","df","sumsq","statistic","p.value"
-"combined.centiloid ~ guild_abundance + AD_Status",84,24138.9379833296,NA,NA,NA,NA
-"combined.centiloid ~ guild_abundance * AD_Status",83,23452.6462384173,1,686.291744912269,2.42881823435386,0.122927724039984
