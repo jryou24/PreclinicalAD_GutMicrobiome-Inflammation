@@ -383,7 +383,7 @@ sample_data(ps_mtg_single_tp)$Tax_Simpson <- alpha_div_mtg_single_tp$Simpson
 ```
 
 
-Figure 2: Network analysis
+Figure 2A-C, Extended Data Figure 2A-D, Figures 4A-C, Extended Data Figure 5A-D: Network analysis
 ```{r}
 # Prepare phyloseq objects for SECOM
 ps_mtg_last_h <- ps_mtg_last_tp_hp %>% subset_samples(AD_Status == "Healthy") 
@@ -674,66 +674,32 @@ bp_closest_efficiency <- ggplot(hub_metrics_closest, aes(x = Group, y = local_ef
                      show.legend = FALSE) 
 ggsave("Figure2C_local_effiency.pdf", plot = bp_closest_efficiency, bg = "transparent", width = 10, height = 8)
 
-### Identifying keystone taxa (taxa with high degree and betweenness) for labeling ###
-summary(hub_metrics_closest$degree)
-summary(hub_metrics_closest$betweenness)
+```
 
-h_closest_keystones <- hub_metrics_h_closest %>% filter(degree > quantile(degree, 0.9) & betweenness > quantile(betweenness, 0.9))
-p_closest_keystones <- hub_metrics_p_closest %>% filter(degree > quantile(degree, 0.9) & betweenness > quantile(betweenness, 0.9))
-closest_keystones <- rbind(h_closest_keystones, p_closest_keystones)
-write.csv(closest_keystones, "250902_closest_hp_keystone_taxa.csv", row.names = F)
+Fig 2D: Comparing guidl abundance at the closest time point
+```{r}
+ps_mtg_single_tp_meta <- data.frame(phyloseq::sample_data(ps_mtg_single_tp))
 
-cutoffs <- hub_metrics_closest %>%
-  group_by(Group) %>% summarise(degree_cutoff = quantile(degree, 0.9, na.rm = TRUE),
-                                betweenness_cutoff = quantile(betweenness, 0.9, na.rm = TRUE))
-hub_metrics_closest_cutoffs <- hub_metrics_closest %>% left_join(cutoffs, by = "Group")
+ps_mtg_single_tp_meta <- ps_mtg_single_tp_meta %>% mutate(guild_abundance_adj = guild_abundance + 1e-6)
 
-degree_bw_scatter <- ggplot(hub_metrics_closest, aes(x = degree, y = betweenness, label = id)) +
-  geom_point(aes(color = Group), size = 3, alpha = 0.7) +
-  geom_text_repel(data = closest_keystones, aes(label = id), size = 4, box.padding = 0.4, point.padding = 0.3, max.overlaps = 20,
-                  segment.color = "grey50") +
-  coord_cartesian(xlim = c(min(hub_metrics_closest$degree) - 1, max(hub_metrics_closest$degree) + 1),
-                  ylim = c(min(hub_metrics_closest$betweenness) - 1, max(hub_metrics_closest$betweenness) + 1)) +
+## Plot Figure 2D
+closest_hp_abundance_plot <- ggplot(ps_mtg_single_tp_meta, aes(x = AD_Status, y = guild_abundance, color = AD_Status)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.2, height = 0, alpha = 0.8, size = 1) +
+  stat_compare_means(method = "wilcox.test", label = "p.format") +
   scale_color_manual(values = custom_colors_hp) +
-  theme_minimal() +
+  theme_bw() +
+  theme(
+    text = element_text(size = 16),       
+    axis.title = element_text(size = 18), 
+    axis.text = element_text(size = 14),  
+    legend.position = "none") +
+  scale_y_log10() +
   labs(
-    title = "Taxa with degree and betweenness in the top 10% within each individual dataset",
-    x = "Degree",
-    y = "Betweenness",
-    color = "AD Status"
-  ) +
-  theme(axis.text.x = element_text(size = 16),
-        axis.text.y = element_text(size = 16),
-        axis.title.x = element_text(size = 18),
-        axis.title.y = element_text(size = 18),
-        legend.title = element_text(size = 14),
-        legend.text = element_text(size = 14))
-ggsave("250904_keystone_taxa_closest_hp.pdf", plot = degree_bw_scatter, bg = "transparent", width = 10, height = 8)
+    y = "Guild Abundance",
+    x = "AD Status")
+ggsave("260402_MTG_guild_abund_comparison_hp.pdf", plot = closest_hp_abundance_plot,bg = "transparent", width = 8, height = 6)
 
-degree_bw_scatter_faceted <- ggplot(hub_metrics_closest_cutoffs, aes(x = degree, y = betweenness)) + 
-  geom_point(aes(color = Group), size = 3, alpha = 0.7) + 
-  geom_text_repel(data = closest_keystones, aes(label = id), size = 3, box.padding = 0.4, point.padding = 0.3, max.overlaps = 20,
-                  segment.color = "grey50") + 
-  geom_vline(data = cutoffs, aes(xintercept = degree_cutoff),
-             linetype = "dashed", color = "grey50", inherit.aes = FALSE) +
-  geom_hline(data = cutoffs, aes(yintercept = betweenness_cutoff),
-             linetype = "dashed", color = "grey50", inherit.aes = FALSE) +
-  scale_color_manual(values = custom_colors_hp) +
-  facet_wrap(~ Group) +
-  theme_minimal() +
-  theme(panel.clip = "off", strip.text = element_blank()) +
-   theme(axis.text.x = element_text(size = 16),
-        axis.text.y = element_text(size = 16),
-        axis.title.x = element_text(size = 18),
-        axis.title.y = element_text(size = 18),
-        legend.title = element_text(size = 14),
-        legend.text = element_text(size = 14)) +
-    labs(
-    title = "Taxa with degree and betweenness in the top 10% within each individual dataset",
-    x = "Degree",
-    y = "Betweenness",
-    color = "AD Status") 
-ggsave("260306_keystone_taxa_closest_hp_faceted.pdf", plot = degree_bw_scatter_faceted, bg = "transparent", width = 10, height = 8)
 ```
 
 
@@ -1340,7 +1306,7 @@ for(i in seq_len(nrow(long_calp_at_sig))) {
 ggsave("260309_Long_Calp_LMM_pvalues_AT_Status_HP.pdf", plot = p_long_calp_atn, bg = "transparent", width = 10, height = 8) 
 ```
 
-Figure 4
+Figure 4D: Longitudinal GM compositional stability
 ```{r}
 mtg_unif_matrix <- create_pairwise_beta_div_matrix(ps_obj = ps_MTG,
                                                  distance_metric = "unifrac",
@@ -1614,136 +1580,10 @@ bp_last_efficiency <- ggplot(hub_metrics_last, aes(x = Group, y = local_efficien
 ggsave("Extended_Fig_5D_local_effiency_follow-up.pdf", plot = bp_last_efficiency, bg = "transparent", width = 10, height = 8)
 ```
 
-Fig 2D and Extended Data Fig 2E: Guilds
+Figure 5E: Longitudinal guild abundance stability
 ```{r}
-## Hard coding guild members
-guild_members <- c("Roseburia_sp_CAG_471", "Roseburia_hominis", "Bacteroides_cellulosilyticus")
-guild_members_long <- c('k__Bacteria.p__Firmicutes.c__Clostridia.o__Clostridiales.f__Lachnospiraceae.g__Roseburia.s__Roseburia_sp_CAG_471',	'k__Bacteria.p__Firmicutes.c__Clostridia.o__Clostridiales.f__Lachnospiraceae.g__Roseburia.s__Roseburia_hominis',	'k__Bacteria.p__Bacteroidetes.c__Bacteroidia.o__Bacteroidales.f__Bacteroidaceae.g__Bacteroides.s__Bacteroides_cellulosilyticus')
-guild_members_long <- gsub("(__[A-Za-z0-9_]+)\\.", "\\1|", guild_members_long)
-
-for (species_name in guild_members_long) {
-  if (species_name %in% taxa_names(ps_mtg_single_tp)) {
-    species_abundance <- as.vector(otu_table(ps_mtg_single_tp)[species_name, ])  
-    sample_data(ps_mtg_single_tp)[[paste0(species_name, "_abundance")]] <- species_abundance
-  } else {
-    warning(paste("Species", species_name, "not found in phyloseq object"))
-  }
-}
-
-ps_mtg_single_tp_meta <- data.frame(phyloseq::sample_data(ps_mtg_single_tp))
-
-ps_mtg_single_tp_meta$guild_abundance <- rowSums(ps_mtg_single_tp_meta[, grepl("s__", names(ps_mtg_single_tp_meta))], na.rm = TRUE)
-#write.csv(guild_metadata, paste0(output_path, "_guild_metadata.csv"), row.names = FALSE)
-
-ps_mtg_single_tp_meta <- ps_mtg_single_tp_meta %>% mutate(guild_abundance_adj = guild_abundance + 1e-6)
-
-### Obtain test train split datasets for plots #####
-test_train_df <- read_excel("Data/CS_guild_metadata.xlsx")
-test_train_df <- test_train_df %>% select(Sample_ID, set)
-ps_mtg_single_tp_meta <- merge(ps_mtg_single_tp_meta, test_train_df, by = "Sample_ID")
-rownames(ps_mtg_single_tp_meta) <- ps_mtg_single_tp_meta$Sample_ID
-sample_data(ps_mtg_single_tp) <- ps_mtg_single_tp_meta
-
-ps_mtg_single_tp_train <- ps_mtg_single_tp %>% ps_filter(set=="train")  %>% sample_data() %>% data.frame() 
-ps_mtg_single_tp_test <- ps_mtg_single_tp %>% ps_filter(set=="test")  %>% sample_data() %>% data.frame()
-
-## Plot Figure 2D
-closest_hp_abundance_plot <- ggplot(ps_mtg_single_tp_meta, aes(x = AD_Status, y = guild_abundance_adj, color = AD_Status)) +
-  geom_boxplot(outlier.shape = NA) +
-  geom_jitter(width = 0.2, height = 0, alpha = 0.8, size = 1) +
-  stat_compare_means(method = "wilcox.test", label = "p.format") +
-  scale_color_manual(values = custom_colors_hp) +
-  theme_bw() +
-  theme(
-    text = element_text(size = 16),       
-    axis.title = element_text(size = 18), 
-    axis.text = element_text(size = 14),  
-    legend.position = "none") +
-  scale_y_log10() +
-  labs(
-    y = "Guild Abundance",
-    x = "AD Status")
-ggsave("260402_MTG_guild_abund_comparison_hp.pdf", plot = closest_hp_abundance_plot,bg = "transparent", width = 8, height = 6)
 
 ```
 
-Figure 5 Guilds
-```{r}
-## Hard coding guild members
-guild_members <- c("Roseburia_sp_CAG_471", "Roseburia_hominis", "Bacteroides_cellulosilyticus")
-guild_members_long <- c('k__Bacteria.p__Firmicutes.c__Clostridia.o__Clostridiales.f__Lachnospiraceae.g__Roseburia.s__Roseburia_sp_CAG_471',	'k__Bacteria.p__Firmicutes.c__Clostridia.o__Clostridiales.f__Lachnospiraceae.g__Roseburia.s__Roseburia_hominis',	'k__Bacteria.p__Bacteroidetes.c__Bacteroidia.o__Bacteroidales.f__Bacteroidaceae.g__Bacteroides.s__Bacteroides_cellulosilyticus')
-guild_members_long <- gsub("(__[A-Za-z0-9_]+)\\.", "\\1|", guild_members_long)
 
-for (species_name in guild_members_long) {
-  if (species_name %in% taxa_names(ps_mtg_last_tp_hp)) {
-    species_abundance <- as.vector(otu_table(ps_mtg_last_tp_hp)[species_name, ])  # Switch to [species, ]
-    sample_data(ps_mtg_last_tp_hp)[[paste0(species_name, "_abundance")]] <- species_abundance
-  } else {
-    warning(paste("Species", species_name, "not found in phyloseq object"))
-  }
-}
-
-ps_mtg_last_hp_meta <- data.frame(phyloseq::sample_data(ps_mtg_last_tp_hp))
-
-ps_mtg_single_tp_meta
-
-ps_mtg_last_hp_meta$guild_abundance <- rowSums(ps_mtg_last_hp_meta[, grepl("s__", names(ps_mtg_last_hp_meta))], na.rm = TRUE)
-#write.csv(guild_metadata, paste0(output_path, "_guild_metadata.csv"), row.names = FALSE)
-
-ps_mtg_last_hp_meta <- ps_mtg_last_hp_meta %>% mutate(guild_abundance_adj = guild_abundance + 1e-6)
-
-custom_colors_hp_last <- c("Healthy" = "#a7d9c1", "Preclinical" = "#e9d8b5")
-
-closest_hp_abundance_plot <- ggplot(ps_mtg_last_hp_meta, aes(x = AD_Status, y = guild_abundance_adj, color = AD_Status)) +
-  geom_boxplot(outlier.shape = NA) +
-  geom_jitter(width = 0.2, height = 0, alpha = 0.8, size = 1) +
-  stat_compare_means(method = "wilcox.test", label = "p.format") +
-  scale_color_manual(values = custom_colors_hp_last) +
-  theme_bw() +
-  theme(
-    text = element_text(size = 16),       # Set general font size
-    axis.title = element_text(size = 18), # Axis titles font size
-    axis.text = element_text(size = 14),  # Axis labels font size
-    legend.position = "none") +
-  scale_y_log10() +
-  labs(
-    y = "Guild Abundance",
-    x = "AD Status")
-ggsave("251029_MTG_last_tp_guild_abund_comparison_hp_no_legends.pdf", plot = last_hp_abundance_plot,bg = "transparent", width = 8, height = 6)
-
-cent_cor_last_hp <- ggplot(ps_mtg_last_hp_meta, aes(x = guild_abundance , y = combined.centiloid, color = AD_Status)) +
-  geom_point(size = 1, alpha = 0.8) +
-  geom_smooth(method = "lm", se = TRUE, alpha = 0.2) +
-  #stat_cor(method = "spearman") +
-  scale_color_manual(values = custom_colors_hp_last) +
-  theme_bw() +
-  theme(
-    text = element_text(size = 16),       # Set general font size
-    axis.title = element_text(size = 18), # Axis titles font size
-    axis.text = element_text(size = 14),  # Axis labels font size
-    axis.text.x = element_text(angle = 40, vjust = 0.6),
-    legend.position = "none",
-    plot.title = element_text(size = 16) # Optional: Add subtitle with a larger font size
-  ) +
-  labs(
-    y = "PET Amyloid",
-    x = "Guild Abundance (%)") 
-ggsave("251028_MTG_single_tp_guild_centiloid_hp_test_subset.pdf", plot = cent_cor_last_hp,bg = "transparent", width = 8, height = 6)
-
-
-ps_mtg_single_tp_train <- ps_mtg_single_tp %>% ps_filter(set=="train")  %>% sample_data() %>% data.frame() %>% mutate(guild_abundance_adj = guild_abundance + 1e-6)
-ps_mtg_single_tp_test <- ps_mtg_single_tp %>% ps_filter(set=="test")  %>% sample_data() %>% data.frame()%>% mutate(guild_abundance_adj = guild_abundance + 1e-6)
-
-## Test whether there is an AD_Status effect on the relationship between centiloid and guild abundance in the test dataset
-lm_last_guild_interaction <- lm(combined.centiloid ~ guild_abundance * AD_Status, data = ps_mtg_single_tp_train)
-lm_last_guild_interaction_summary <- tidy(lm_last_guild_interaction)
-
-lm0_last_guild <- lm(combined.centiloid ~ guild_abundance + AD_Status, data = ps_mtg_single_tp_train)
-
-last_guild_anova_summary <- tidy(anova(lm0_last_guild, lm_last_guild_interaction))
-
-write.csv(lm_last_guild_interaction_summary, "251029_lm_guild_centiloid_ad_status_interaction_hp_last_summary.csv", row.names = FALSE)
-write.csv(last_guild_anova_summary, "251029_lm_guild_centiloid_ad_status_interaction_hp_last_anova.csv", row.names = FALSE)
-
-```
 
