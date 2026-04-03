@@ -91,7 +91,7 @@ custom_colors_at_status <- c("Healthy A-/T-"="#49b9a5", "Preclinical A+/T-" = "#
 Load Data
 ```{r}
 
-meta_data_path <- "~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/full_guild_metadata_train_test_split.xlsx"
+meta_data_path <- "~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/SupplementaryTable1_final.xlsx"
 metaphlan_path <- "~/Documents/GitHub/PreclinicalAD_GutMicrobiome-Inflammation/R/Data/MTG_metaphlan3_merged.txt"
 
 ## Read in Metaphlan3 tree which is necessary to compute UniFrac distances later ###
