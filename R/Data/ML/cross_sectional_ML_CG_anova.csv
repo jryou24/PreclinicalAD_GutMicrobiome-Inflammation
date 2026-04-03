@@ -1,0 +1,10 @@
+"","metric","anova_p","comparison","diff","lwr","upr","p adj"
+"clinical_guild-clinical_base...1","accuracy_score",1.35990680270127e-05,"clinical_guild-clinical_base",-0.00737500000000002,-0.0192444153025093,0.0044944153025093,0.310001398031
+"clinical_guild_split-clinical_base...2","accuracy_score",1.35990680270127e-05,"clinical_guild_split-clinical_base",0.016375,0.00450558469749071,0.0282444153025093,0.00367630704459565
+"clinical_guild_split-clinical_guild...3","accuracy_score",1.35990680270127e-05,"clinical_guild_split-clinical_guild",0.02375,0.0118805846974907,0.0356194153025094,1.11798075694836e-05
+"clinical_guild-clinical_base...4","sensitivity",3.32571100656767e-05,"clinical_guild-clinical_base",-0.052857142857143,-0.0847289020155533,-0.0209853836987327,0.000340654524451756
+"clinical_guild_split-clinical_base...5","sensitivity",3.32571100656767e-05,"clinical_guild_split-clinical_base",-0.0553571428571429,-0.0872289020155532,-0.0234853836987326,0.000163234722450945
+"clinical_guild_split-clinical_guild...6","sensitivity",3.32571100656767e-05,"clinical_guild_split-clinical_guild",-0.00249999999999986,-0.0343717591584101,0.0293717591584104,0.981357036593996
+"clinical_guild-clinical_base...7","specificity",2.6693395684159e-18,"clinical_guild-clinical_base",0.0171153846153843,0.00336786106921885,0.0308629081615498,0.0101055814372973
+"clinical_guild_split-clinical_base...8","specificity",2.6693395684159e-18,"clinical_guild_split-clinical_base",0.0549999999999997,0.0412524764538343,0.0687475235461652,8.97837360014364e-13
+"clinical_guild_split-clinical_guild...9","specificity",2.6693395684159e-18,"clinical_guild_split-clinical_guild",0.0378846153846154,0.0241370918384499,0.0516321389307809,1.07028663709485e-09
