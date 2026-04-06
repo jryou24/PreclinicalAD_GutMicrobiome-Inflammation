@@ -1621,7 +1621,7 @@ p_long_guild_timediff_hp <- ggplot(long_guild_meta_filt, aes(x = Time_diff_from_
   geom_line(linetype = "dashed") +   # Connect points belonging to the same ID +
   geom_smooth(aes(group = AD_Status), method = "lm", se = TRUE) +  # Add a linear regression line with confidence intervals
   scale_color_manual(values = custom_colors_hp) +
-  scale_x_continuous(breaks = seq(0, max(long_guild_meta_filt$time_from_baseline_mo), by = 6)) +  # Set x-axis breaks at every 6 months
+  scale_x_continuous(breaks = seq(0, max(long_guild_meta_filt$Time_diff_from_baseline_mo), by = 6)) +  # Set x-axis breaks at every 6 months
   labs(x = "Time difference from baseline sample (Months)", 
        y = "Guild abundance",
        color = "AD Status") +  # Label the axes and legend
