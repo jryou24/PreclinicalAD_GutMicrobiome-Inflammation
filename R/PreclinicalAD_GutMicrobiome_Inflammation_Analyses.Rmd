@@ -1334,7 +1334,7 @@ summary(mtg_unif_matrix_baseline$Time_point.y)
 mtg_unif_matrix_baseline_subset <- mtg_unif_matrix_baseline %>% filter(complete.cases(.))
 summary(mtg_unif_matrix_baseline_subset$AD_Status.y)
 
-# Filter out any consecutive samples that are less than 6 months apart from each other
+# Filter out any consecutive samples that are less than 6 months apart from each other since we are interested in GM changes that happen over longer periods of time
 mtg_unif_matrix_baseline_subset <- mtg_unif_matrix_baseline_subset %>%
   arrange(ID.y, Time_diff_from_baseline_mo.x) %>% 
   group_by(ID.y) %>%
@@ -1395,7 +1395,6 @@ lmm_hp_lmer <- tidy(lmm_hp.model)
 write.csv(lmm_hp_lmer, "260308_MTG_long_hp_unif_dynamism_lmm.csv", row.names = F)
 
 anova(lmm_hp.null, lmm_hp.model)
-
 write.csv(anova(lmm_hp.null, lmm_hp.model), "260308_MTG_long_hp_unif_dynamism_lmm_anova.csv")
 
 write.csv(mtg_unif_matrix_baseline_subset, "GM_longitudinal_stability_samples.csv", row.names = F)
@@ -1410,7 +1409,6 @@ closest_h_time <- ps_mtg_closest_h_meta %>% select(Sample_ID, ID, Time_diff_from
 last_h_time <- ps_mtg_last_h_meta %>% select(Sample_ID, ID, Time_diff_from_baseline_mo, AD_Status)
 
 h_sample_pairs <- merge(closest_h_time, last_h_time, by = "ID")
-
 
 closest_p_time <- ps_mtg_closest_p_meta %>% select(Sample_ID, ID, Time_diff_from_baseline_mo, AD_Status)
 last_p_time <- ps_mtg_last_p_meta %>% select(Sample_ID, ID, Time_diff_from_baseline_mo, AD_Status)
