@@ -5,18 +5,18 @@ date: "2025-08-15"
 ---
 
 ```{r setup, include=FALSE}
-library(ggplot2)          #3.5.0
-library(ggExtra)          #0.10.1
+library(ggplot2)          #4.0.2
+library(ggExtra)          #0.11.0
 library(ggridges)
 library(ggrepel)
-library(dplyr)            #1.1.2
-library(phyloseq)         #1.46.0
-library(vegan)
-library(Maaslin2)         #1.12.0
-library(ape)              #5.7.1
-library(readxl)           #1.4.3     
-library(microViz)         #0.12.0
-library(ggside)           #0.3.1
+library(dplyr)            #1.2.0
+library(phyloseq)         #1.50.0
+library(vegan)            #2.7.2
+library(Maaslin2)         #1.20.0
+library(ape)              #5.8.1
+library(readxl)           #1.4.5     
+library(microViz)         #0.12.6
+library(ggside)           #0.4.1
 library(patchwork)        #1.2
 library(ComplexHeatmap)   #2.14.0
 library(tidyr)            #1.3.1
@@ -27,26 +27,19 @@ library(ggpubr)           #0.6.0
 library(NatParksPalettes) #0.2.0
 library(cowplot)          #1.1.2
 library(stringr)          #1.5.1
-library(Boruta)           #8.0.0 
-library(caret)            #6.0-94
-library(VIM)              #6.2.2 
-library(corpcor)
-library(corrplot)
-library(Hmisc)
-library(ANCOMBC)          #2_4.0   
 library(MTXmodel)         #1.2.4
 library(forcats)          #1.0.0
 library(tidyverse)        #2.0.0  
 library(scales)           #1.3.0
 library(microbiome)
-library(lme4)
-library(lmerTest)
+library(lme4)             #1.1.38
+library(lmerTest)         #3.2.0
 library(lmtest)
 library(broom)
 library(MuMIn)
 library(car)
-library(emmeans)
-library(igraph)
+library(emmeans)          #2.0.1
+library(igraph)           #2.2.2
 library(FSA)
 library(rcompanion)
 ## Data Processing Functions 
